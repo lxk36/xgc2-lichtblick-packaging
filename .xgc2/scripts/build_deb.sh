@@ -256,13 +256,13 @@ awk \
           # incompatible, unversioned OSS shim. The real ALSA packages provide
           # a version on every supported Ubuntu release, including the t64
           # package on Noble, so this relation excludes the shim.
-          dependency = "libasound2 (>= 1.0.16)"
+          dependency = "libasound2"
           alsa_seen = 1
         }
         rewritten_depends = rewritten_depends (dep_index == 1 ? " " : ", ") dependency
       }
       if (!alsa_seen) {
-        rewritten_depends = rewritten_depends (dependency_count ? ", " : " ") "libasound2 (>= 1.0.16)"
+        rewritten_depends = rewritten_depends (dependency_count ? ", " : " ") "libasound2"
       }
       print rewritten_depends
       next
