@@ -148,7 +148,9 @@ validate_deb() {
     value="$(dpkg-deb -f "${deb}" "${relation}")"
     [[ ",${value// /}," == *",lichtblick,"* ]]
   done
-  for dependency in libasound2 libgtk-3-0 libnotify4 libnss3 libxtst6 xdg-utils libatspi2.0-0 libdrm2 libgbm1 libxcb-dri3-0; do
+  value="$(dpkg-deb -f "${deb}" Depends)"
+  [[ ",${value// /}," == *",libasound2(>=1.0.16),"* ]]
+  for dependency in libgtk-3-0 libnotify4 libnss3 libxtst6 xdg-utils libatspi2.0-0 libdrm2 libgbm1 libxcb-dri3-0; do
     value="$(dpkg-deb -f "${deb}" Depends)"
     [[ ",${value// /}," == *",${dependency},"* ]]
   done

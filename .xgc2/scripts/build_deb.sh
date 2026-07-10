@@ -243,10 +243,28 @@ awk \
     /^Conflicts:/ { print "Conflicts: lichtblick"; conflicts_seen = 1; next }
     /^Replaces:/ { print "Replaces: lichtblick"; replaces_seen = 1; next }
     /^Depends:/ {
-      if ($0 !~ /(^|,)[[:space:]]*libasound2([[:space:](,]|$)/) {
-        $0 = $0 ", libasound2"
+      depends_value = $0
+      sub(/^Depends:[[:space:]]*/, "", depends_value)
+      dependency_count = split(depends_value, dependencies, /,[[:space:]]*/)
+      rewritten_depends = "Depends:"
+      alsa_seen = 0
+      for (dep_index = 1; dep_index <= dependency_count; dep_index++) {
+        dependency = dependencies[dep_index]
+        gsub(/^[[:space:]]+|[[:space:]]+$/, "", dependency)
+        if (dependency ~ /^libasound2([[:space:]]*\([^)]*\))?$/) {
+          # Noble exposes libasound2 as a virtual package also provided by an
+          # incompatible, unversioned OSS shim. The real ALSA packages provide
+          # a version on every supported Ubuntu release, including the t64
+          # package on Noble, so this relation excludes the shim.
+          dependency = "libasound2 (>= 1.0.16)"
+          alsa_seen = 1
+        }
+        rewritten_depends = rewritten_depends (dep_index == 1 ? " " : ", ") dependency
       }
-      print
+      if (!alsa_seen) {
+        rewritten_depends = rewritten_depends (dependency_count ? ", " : " ") "libasound2 (>= 1.0.16)"
+      }
+      print rewritten_depends
       next
     }
     /^Description:/ {
@@ -332,6 +350,11 @@ SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH}" \
 for relation in Provides Conflicts Replaces; do
   [[ "$(dpkg-deb -f "${output_deb}" "${relation}")" == "lichtblick" ]]
 done
+package_depends="$(dpkg-deb -f "${output_deb}" Depends)"
+if [[ ",${package_depends// /}," != *",libasound2(>=1.0.16),"* ]]; then
+  echo "Debian artifact must require a versioned, real ALSA libasound2 provider." >&2
+  exit 1
+fi
 dpkg-deb --info "${output_deb}"
 sha256sum "${output_deb}"
 echo "Debian artifact written to ${output_deb}"

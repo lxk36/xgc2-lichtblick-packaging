@@ -1,7 +1,7 @@
 schema: xgc2.product.v1
 id: xgc2-lichtblick
 name: XGC2 Lichtblick Desktop
-version: 1.25.0-2
+version: 1.25.0-3
 kind: desktop-apt
 summary: Pinned, tested Lichtblick desktop packages for XGC2 Ubuntu workstations.
 groups:
@@ -58,6 +58,6 @@ release:
   workflow: release.yml
   ci_workflow: ci.yml
   apt_versions:
-    focal: 1.25.0-2~focal
-    jammy: 1.25.0-2~jammy
-    noble: 1.25.0-2~noble
+    focal: 1.25.0-3~focal
+    jammy: 1.25.0-3~jammy
+    noble: 1.25.0-3~noble
