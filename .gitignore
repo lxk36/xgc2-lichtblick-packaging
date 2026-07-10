@@ -1,0 +1,10 @@
+.ci/
+.work/
+debs/
+*.deb
+*.tar.gz
+*.tar.xz
+node_modules/
+__pycache__/
+*.py[cod]
+.DS_Store

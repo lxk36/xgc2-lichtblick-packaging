@@ -1,0 +1,61 @@
+schema: xgc2.product.v1
+id: xgc2-lichtblick
+name: XGC2 Lichtblick Desktop
+version: 1.25.0-2
+kind: desktop-apt
+summary: Pinned, tested Lichtblick desktop packages for XGC2 Ubuntu workstations.
+groups:
+  - webui
+  - desktop
+apt:
+  distribution: focal,jammy,noble
+  install:
+    - xgc2-lichtblick
+  packages:
+    - xgc2-lichtblick
+  depends:
+    - libasound2
+    - libgtk-3-0
+    - libnotify4
+    - libnss3
+    - libxtst6
+    - xdg-utils
+    - libatspi2.0-0
+    - libdrm2
+    - libgbm1
+    - libxcb-dri3-0
+usage:
+  install: |-
+    sudo apt update
+    sudo apt install xgc2-lichtblick
+  smoke_test: |-
+    dpkg-query -W -f='${Status} ${Version}\n' xgc2-lichtblick
+  notes: >-
+    This package owns the Lichtblick executable and desktop integration. It
+    cannot be co-installed with the upstream lichtblick Debian package.
+conflicts:
+  apt_packages:
+    - lichtblick
+ownership:
+  paths:
+    - /opt/Lichtblick
+    - /usr/bin/lichtblick
+    - /usr/share/applications/lichtblick.desktop
+    - /usr/share/doc/xgc2-lichtblick
+    - /usr/share/icons/hicolor/16x16/apps/lichtblick.png
+    - /usr/share/icons/hicolor/32x32/apps/lichtblick.png
+    - /usr/share/icons/hicolor/48x48/apps/lichtblick.png
+    - /usr/share/icons/hicolor/64x64/apps/lichtblick.png
+    - /usr/share/icons/hicolor/128x128/apps/lichtblick.png
+    - /usr/share/icons/hicolor/256x256/apps/lichtblick.png
+    - /usr/share/icons/hicolor/512x512/apps/lichtblick.png
+    - /usr/share/mime/packages/lichtblick.xml
+release:
+  repository: lxk36/xgc2-lichtblick-packaging
+  ref: main
+  workflow: release.yml
+  ci_workflow: ci.yml
+  apt_versions:
+    focal: 1.25.0-2~focal
+    jammy: 1.25.0-2~jammy
+    noble: 1.25.0-2~noble

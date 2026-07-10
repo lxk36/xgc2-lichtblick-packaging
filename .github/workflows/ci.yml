@@ -1,0 +1,109 @@
+name: ci
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package-compliance:
+    name: Compliance
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Validate repository and package metadata
+        run: |
+          set -euo pipefail
+          git diff --check HEAD
+          ./.xgc2/scripts/check_package_compliance.sh
+
+  deb-build-and-smoke:
+    name: deb-${{ matrix.distribution }}-${{ matrix.architecture }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - distribution: focal
+            ubuntu_version: "20.04"
+            architecture: amd64
+            runner: ubuntu-latest
+          - distribution: focal
+            ubuntu_version: "20.04"
+            architecture: arm64
+            runner: ubuntu-24.04-arm
+          - distribution: jammy
+            ubuntu_version: "22.04"
+            architecture: amd64
+            runner: ubuntu-latest
+          - distribution: jammy
+            ubuntu_version: "22.04"
+            architecture: arm64
+            runner: ubuntu-24.04-arm
+          - distribution: noble
+            ubuntu_version: "24.04"
+            architecture: amd64
+            runner: ubuntu-latest
+          - distribution: noble
+            ubuntu_version: "24.04"
+            architecture: arm64
+            runner: ubuntu-24.04-arm
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Build, install, and smoke-test deb
+        run: |
+          set -euo pipefail
+          ./.xgc2/scripts/build_deb_in_docker.sh \
+            --ubuntu-version "${{ matrix.ubuntu_version }}" \
+            --architecture "${{ matrix.architecture }}" \
+            --work-dir "$RUNNER_TEMP/lichtblick-${{ matrix.distribution }}-${{ matrix.architecture }}" \
+            --output-dir "$GITHUB_WORKSPACE/.ci/debs"
+
+      - name: Create trusted build manifest
+        run: |
+          set -euo pipefail
+          # shellcheck disable=SC1091
+          source lichtblick.lock
+          product_version="$(awk -F': *' '/^version:/ {print $2; exit}' .xgc2/product.yml)"
+          python3 .xgc2/scripts/xgc2_artifact_manifest.py build \
+            --deb-dir .ci/debs \
+            --output-dir .ci/build-manifests \
+            --product xgc2-lichtblick \
+            --product-version "$product_version" \
+            --distribution "${{ matrix.distribution }}" \
+            --architecture "${{ matrix.architecture }}" \
+            --source-sha "$GITHUB_SHA" \
+            --ci-run-id "$GITHUB_RUN_ID" \
+            --ci-workflow "$GITHUB_WORKFLOW" \
+            --ci-workflow-ref "$GITHUB_WORKFLOW_REF" \
+            --upstream-repository "$LICHTBLICK_REPOSITORY" \
+            --upstream-ref "$LICHTBLICK_REF" \
+            --upstream-sha "$LICHTBLICK_SHA"
+
+      - name: Upload trusted deb and manifest
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: xgc2-lichtblick-${{ matrix.distribution }}-${{ matrix.architecture }}
+          path: |
+            .ci/debs/*.deb
+            .ci/build-manifests/*.json
+          retention-days: 14
+          if-no-files-found: error
+          include-hidden-files: true

@@ -1,0 +1,250 @@
+name: update-lichtblick
+
+on:
+  schedule:
+    - cron: "17 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: update-lichtblick
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Discover latest stable source tag
+        id: latest
+        run: |
+          set -euo pipefail
+          # shellcheck disable=SC1091
+          source lichtblick.lock
+
+          latest_tag="$({
+            git ls-remote --tags --refs "$LICHTBLICK_REPOSITORY" 'refs/tags/v*' |
+              awk '{sub("refs/tags/", "", $2); print $2}' |
+              grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' || true
+          } | sort -V | tail -n1)"
+          [[ -n "$latest_tag" ]] || {
+            echo "No stable semantic-version tag found in $LICHTBLICK_REPOSITORY" >&2
+            exit 1
+          }
+
+          if [[ "$latest_tag" == "$LICHTBLICK_REF" ]]; then
+            echo "update=false" >> "$GITHUB_OUTPUT"
+            echo "Pinned source is already the latest stable tag: $latest_tag"
+            exit 0
+          fi
+          newest_version="$(printf '%s\n' "${LICHTBLICK_REF#v}" "${latest_tag#v}" | sort -V | tail -n1)"
+          if [[ "$newest_version" != "${latest_tag#v}" ]]; then
+            echo "update=false" >> "$GITHUB_OUTPUT"
+            echo "Latest remote stable tag $latest_tag is not newer than $LICHTBLICK_REF"
+            exit 0
+          fi
+
+          checkout="$RUNNER_TEMP/lichtblick-source"
+          git clone --depth 1 --branch "$latest_tag" "$LICHTBLICK_REPOSITORY" "$checkout"
+          latest_sha="$(git -C "$checkout" rev-parse HEAD)"
+          latest_version="${latest_tag#v}"
+
+          readarray -t toolchain < <(python3 - "$checkout/package.json" <<'PY'
+          import json
+          import pathlib
+          import re
+          import sys
+
+          package = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+          package_manager = str(package.get("packageManager", ""))
+          match = re.fullmatch(
+              r"yarn@([0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?)(?:\+.*)?",
+              package_manager,
+          )
+          if match is None:
+              raise SystemExit(f"unsupported packageManager: {package_manager!r}")
+          engines_node = str(package.get("engines", {}).get("node", ""))
+          node_match = re.fullmatch(
+              r"\s*>=\s*([0-9]+)(?:\.([0-9]+))?(?:\.([0-9]+))?\s*", engines_node
+          )
+          if node_match is None:
+              raise SystemExit(
+                  "automatic updates require a simple >= Node engine constraint; "
+                  f"found {engines_node!r}"
+              )
+          parts = [int(part or 0) for part in node_match.groups()]
+          print(".".join(str(part) for part in parts))
+          print(match.group(1))
+          PY
+          )
+          minimum_node_version="${toolchain[0]}"
+          yarn_version="${toolchain[1]}"
+
+          node_major="$LICHTBLICK_NODE_MAJOR"
+          node_version="$LICHTBLICK_NODE_VERSION"
+          node_x64_sha256="$LICHTBLICK_NODE_X64_SHA256"
+          node_arm64_sha256="$LICHTBLICK_NODE_ARM64_SHA256"
+          newest_node="$(printf '%s\n' "$node_version" "$minimum_node_version" | sort -V | tail -n1)"
+          if [[ "$newest_node" != "$node_version" ]]; then
+            node_major="${minimum_node_version%%.*}"
+            checksums="$(curl --fail --location --retry 5 \
+              "https://nodejs.org/dist/latest-v${node_major}.x/SHASUMS256.txt")"
+            x64_line="$(grep -E "  node-v[0-9]+\\.[0-9]+\\.[0-9]+-linux-x64\\.tar\\.xz$" <<< "$checksums")"
+            [[ "$(wc -l <<< "$x64_line")" == 1 ]] || {
+              echo "Cannot identify one x64 Node archive for major $node_major" >&2
+              exit 1
+            }
+            read -r node_x64_sha256 x64_archive <<< "$x64_line"
+            node_version="${x64_archive#node-v}"
+            node_version="${node_version%-linux-x64.tar.xz}"
+            arm64_archive="node-v${node_version}-linux-arm64.tar.xz"
+            node_arm64_sha256="$(awk -v archive="$arm64_archive" '$2 == archive {print $1}' <<< "$checksums")"
+            [[ "$node_x64_sha256" =~ ^[0-9a-f]{64}$ && "$node_arm64_sha256" =~ ^[0-9a-f]{64}$ ]] || {
+              echo "Cannot resolve pinned Node archive hashes for $node_version" >&2
+              exit 1
+            }
+          fi
+
+          {
+            echo "update=true"
+            echo "tag=$latest_tag"
+            echo "sha=$latest_sha"
+            echo "version=$latest_version"
+            echo "node_major=$node_major"
+            echo "node_version=$node_version"
+            echo "node_x64_sha256=$node_x64_sha256"
+            echo "node_arm64_sha256=$node_arm64_sha256"
+            echo "yarn_version=$yarn_version"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Update immutable lock and product versions
+        if: ${{ steps.latest.outputs.update == 'true' }}
+        env:
+          NEW_REF: ${{ steps.latest.outputs.tag }}
+          NEW_SHA: ${{ steps.latest.outputs.sha }}
+          NEW_VERSION: ${{ steps.latest.outputs.version }}
+          NODE_MAJOR: ${{ steps.latest.outputs.node_major }}
+          NODE_VERSION: ${{ steps.latest.outputs.node_version }}
+          NODE_X64_SHA256: ${{ steps.latest.outputs.node_x64_sha256 }}
+          NODE_ARM64_SHA256: ${{ steps.latest.outputs.node_arm64_sha256 }}
+          YARN_VERSION: ${{ steps.latest.outputs.yarn_version }}
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          import os
+          import pathlib
+          import re
+
+          lock_path = pathlib.Path("lichtblick.lock")
+          lock = lock_path.read_text(encoding="utf-8")
+          replacements = {
+              "LICHTBLICK_REF": os.environ["NEW_REF"],
+              "LICHTBLICK_SHA": os.environ["NEW_SHA"],
+              "LICHTBLICK_VERSION": os.environ["NEW_VERSION"],
+              "LICHTBLICK_NODE_MAJOR": os.environ["NODE_MAJOR"],
+              "LICHTBLICK_NODE_VERSION": os.environ["NODE_VERSION"],
+              "LICHTBLICK_NODE_X64_SHA256": os.environ["NODE_X64_SHA256"],
+              "LICHTBLICK_NODE_ARM64_SHA256": os.environ["NODE_ARM64_SHA256"],
+              "LICHTBLICK_YARN_VERSION": os.environ["YARN_VERSION"],
+          }
+          for key, value in replacements.items():
+              lock, count = re.subn(
+                  rf"(?m)^{re.escape(key)}=.*$", f"{key}={value}", lock, count=1
+              )
+              if count != 1:
+                  raise SystemExit(f"lock field missing or duplicated: {key}")
+          lock_path.write_text(lock, encoding="utf-8")
+
+          product_path = pathlib.Path(".xgc2/product.yml")
+          product = product_path.read_text(encoding="utf-8")
+          package_version = f"{os.environ['NEW_VERSION']}-1"
+          product, count = re.subn(
+              r"(?m)^version: .+$", f"version: {package_version}", product, count=1
+          )
+          if count != 1:
+              raise SystemExit("top-level product version missing or duplicated")
+          for distribution in ("focal", "jammy", "noble"):
+              product, count = re.subn(
+                  rf"(?m)^    {distribution}: .+$",
+                  f"    {distribution}: {package_version}~{distribution}",
+                  product,
+                  count=1,
+              )
+              if count != 1:
+                  raise SystemExit(f"apt version missing or duplicated: {distribution}")
+          product_path.write_text(product, encoding="utf-8")
+          PY
+
+          ./.xgc2/scripts/check_package_compliance.sh
+          git diff --check
+
+      - name: Open or refresh upgrade pull request
+        if: ${{ steps.latest.outputs.update == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NEW_REF: ${{ steps.latest.outputs.tag }}
+          NEW_SHA: ${{ steps.latest.outputs.sha }}
+          NEW_VERSION: ${{ steps.latest.outputs.version }}
+        run: |
+          set -euo pipefail
+          branch="automation/update-lichtblick"
+          title="chore: update Lichtblick to ${NEW_REF}"
+          body="Updates the immutable source pin to ${NEW_REF} (${NEW_SHA}) and bumps XGC2 Debian versions to ${NEW_VERSION}-1. This PR is intentionally not auto-merged; all six package jobs must pass before review."
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          remote_sha="$(git ls-remote --heads origin "refs/heads/$branch" | awk '{print $1}')"
+          pr_number="$(gh pr list --state open --head "$branch" --json number --jq '.[0].number // empty')"
+          if [[ -n "$remote_sha" ]]; then
+            git fetch --no-tags origin "$remote_sha"
+            if git diff --quiet "$remote_sha" -- lichtblick.lock .xgc2/product.yml; then
+              if [[ -z "$pr_number" ]]; then
+                gh pr create \
+                  --base main \
+                  --head "$branch" \
+                  --title "$title" \
+                  --body "$body"
+                gh workflow run ci.yml --ref "$branch"
+              else
+                echo "Update branch and pull request #$pr_number already contain $NEW_REF; no rebuild needed."
+              fi
+              exit 0
+            fi
+          fi
+
+          git switch -C "$branch"
+          git add lichtblick.lock .xgc2/product.yml
+          git commit -m "$title"
+
+          if [[ -n "$remote_sha" ]]; then
+            git push --force-with-lease="refs/heads/$branch:$remote_sha" origin "HEAD:refs/heads/$branch"
+          else
+            git push origin "HEAD:refs/heads/$branch"
+          fi
+
+          if [[ -z "$pr_number" ]]; then
+            gh pr create \
+              --base main \
+              --head "$branch" \
+              --title "$title" \
+              --body "$body"
+          else
+            gh pr edit "$pr_number" --title "$title" --body "$body"
+            echo "Refreshed existing pull request #$pr_number"
+          fi
+
+          # Pushes and pull requests created with GITHUB_TOKEN do not recursively
+          # start CI, so dispatch the six-package review matrix explicitly.
+          gh workflow run ci.yml --ref "$branch"
