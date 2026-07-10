@@ -9,7 +9,7 @@ repo_root="$(cd "${script_dir}/../.." && pwd)"
 source "${repo_root}/lichtblick.lock"
 
 package_name="xgc2-lichtblick"
-package_distribution="${PACKAGE_DISTRIBUTION:-${APT_REPO_DISTRIBUTION:-}}"
+package_distribution="${PACKAGE_DISTRIBUTION:-}"
 target_arch="${TARGET_ARCH:-${PACKAGE_ARCHITECTURE:-$(dpkg --print-architecture)}}"
 source_dir="${LICHTBLICK_SOURCE_DIR:-${repo_root}/.work/source-${package_distribution}-${target_arch}}"
 work_dir="${LICHTBLICK_BUILD_WORK_DIR:-${repo_root}/.work/build-${package_distribution}-${target_arch}}"

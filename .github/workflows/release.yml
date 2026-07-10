@@ -8,46 +8,76 @@ on:
         required: true
         type: string
       expected_source_sha:
-        description: Expected packaging repository commit SHA
+        description: Expected source commit SHA
         required: true
         type: string
-      publish_apt:
-        description: Publish validated debs to the XGC2 APT repository
-        required: true
-        type: boolean
-        default: false
+      prepare_action:
+        description: Release-train action
+        required: false
+        default: release
+        type: choice
+        options:
+          - release
+          - compatibility-verify
+      apt_overlay_url:
+        description: Optional release-scoped staging APT base URL
+        required: false
+        default: ""
+        type: string
+      dependency_set_digest:
+        description: SHA256 of the resolved release-train dependency set
+        required: false
+        default: ""
+        type: string
       run_cpp_quality:
-        description: Run C++ quality checks (not applicable to this product)
+        description: Run C++ quality checks
         required: true
-        type: boolean
         default: false
+        type: boolean
       run_source_tests:
-        description: Run source tests in addition to package build and smoke tests
+        description: Run source tests
         required: true
-        type: boolean
         default: false
-      release_id:
-        description: Parent orchestrator release id for correlation and audit
-        required: false
-        default: ""
-        type: string
-      release_lock_digest:
-        description: SHA256 of the immutable parent release lock
-        required: false
-        default: ""
-        type: string
-      trusted_ci_run_id:
-        description: Exact successful push CI run whose artifacts may be reused
-        required: false
-        default: ""
-        type: string
+        type: boolean
 
 permissions:
   actions: read
   contents: read
 
+env:
+  XGC2_APT_OVERLAY_URL: ${{ inputs.apt_overlay_url }}
+  XGC2_DEPENDENCY_SET_DIGEST: ${{ inputs.dependency_set_digest }}
+
 jobs:
+  prepare-contract:
+    name: Validate prepare contract
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate release-train inputs
+        env:
+          PREPARE_ACTION: ${{ inputs.prepare_action }}
+          APT_OVERLAY_URL: ${{ inputs.apt_overlay_url }}
+          DEPENDENCY_SET_DIGEST: ${{ inputs.dependency_set_digest }}
+        run: |
+          set -euo pipefail
+          case "$PREPARE_ACTION" in
+            release|compatibility-verify) ;;
+            *)
+              echo "unsupported prepare_action: $PREPARE_ACTION" >&2
+              exit 1
+              ;;
+          esac
+          if [[ -n "$DEPENDENCY_SET_DIGEST" && ! "$DEPENDENCY_SET_DIGEST" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "dependency_set_digest must be empty or 64 lowercase hex characters" >&2
+            exit 1
+          fi
+          if [[ -n "$APT_OVERLAY_URL" && ! "$DEPENDENCY_SET_DIGEST" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "apt_overlay_url requires a dependency_set_digest" >&2
+            exit 1
+          fi
+
   release-guard:
+    needs: prepare-contract
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -60,12 +90,8 @@ jobs:
         env:
           EXPECTED_VERSION: ${{ inputs.expected_version }}
           EXPECTED_SOURCE_SHA: ${{ inputs.expected_source_sha }}
-          PUBLISH_APT: ${{ inputs.publish_apt }}
-          RELEASE_ID: ${{ inputs.release_id }}
-          RELEASE_LOCK_DIGEST: ${{ inputs.release_lock_digest }}
           RUN_CPP_QUALITY: ${{ inputs.run_cpp_quality }}
           RUN_SOURCE_TESTS: ${{ inputs.run_source_tests }}
-          TRUSTED_CI_RUN_ID: ${{ inputs.trusted_ci_run_id }}
         run: |
           set -euo pipefail
           if [[ "$GITHUB_REF" != "refs/heads/main" ]]; then
@@ -80,14 +106,6 @@ jobs:
             echo "expected_source_sha must be 40 lowercase hex characters" >&2
             exit 1
           fi
-          if [[ -n "$RELEASE_ID" && ! "$RELEASE_ID" =~ ^[0-9A-Za-z][0-9A-Za-z._:-]{0,127}$ ]]; then
-            echo "release_id contains unsupported characters or is too long" >&2
-            exit 1
-          fi
-          if [[ -n "$RELEASE_LOCK_DIGEST" && ! "$RELEASE_LOCK_DIGEST" =~ ^[0-9a-f]{64}$ ]]; then
-            echo "release_lock_digest must be empty or 64 lowercase hex characters" >&2
-            exit 1
-          fi
           product_version="$(awk -F': *' '/^version:/ {print $2; exit}' .xgc2/product.yml)"
           if [[ "$product_version" != "$EXPECTED_VERSION" ]]; then
             echo "product version $product_version != expected $EXPECTED_VERSION" >&2
@@ -100,21 +118,6 @@ jobs:
             exit 1
           fi
 
-          if [[ -n "$TRUSTED_CI_RUN_ID" && ! "$TRUSTED_CI_RUN_ID" =~ ^[1-9][0-9]{0,14}$ ]]; then
-            echo "trusted_ci_run_id must be a positive, safely representable run id" >&2
-            exit 1
-          fi
-          if [[ "$PUBLISH_APT" == "true" ]]; then
-            [[ -n "$RELEASE_ID" ]] || {
-              echo "release_id is required when publish_apt=true" >&2
-              exit 1
-            }
-            [[ "$RELEASE_LOCK_DIGEST" =~ ^[0-9a-f]{64}$ ]] || {
-              echo "release_lock_digest must be 64 lowercase hex characters" >&2
-              exit 1
-            }
-          fi
-
           git diff --check HEAD
           ./.xgc2/scripts/check_package_compliance.sh
 
@@ -124,40 +127,6 @@ jobs:
           if [[ "$RUN_SOURCE_TESTS" == "true" ]]; then
             echo "The production build and installed-package smoke test are the source test gate."
           fi
-
-      - name: Validate trusted CI run identity
-        if: ${{ inputs.trusted_ci_run_id != '' }}
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
-        env:
-          EXPECTED_SOURCE_SHA: ${{ inputs.expected_source_sha }}
-          TRUSTED_CI_RUN_ID: ${{ inputs.trusted_ci_run_id }}
-        with:
-          script: |
-            const runId = Number(process.env.TRUSTED_CI_RUN_ID);
-            if (!Number.isSafeInteger(runId) || runId <= 0) {
-              core.setFailed(`trusted run id is not a positive safe integer`);
-              return;
-            }
-            const { data: run } = await github.rest.actions.getWorkflowRun({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              run_id: runId,
-            });
-            if (run.event !== "push") {
-              core.setFailed(`trusted run ${runId} event is ${run.event}, not push`);
-            }
-            if (run.conclusion !== "success") {
-              core.setFailed(`trusted run ${runId} conclusion is ${run.conclusion}`);
-            }
-            if (run.head_sha !== process.env.EXPECTED_SOURCE_SHA) {
-              core.setFailed(
-                `trusted run ${runId} SHA ${run.head_sha} != ${process.env.EXPECTED_SOURCE_SHA}`,
-              );
-            }
-            if (!run.path.endsWith("/.github/workflows/ci.yml") &&
-                run.path !== ".github/workflows/ci.yml") {
-              core.setFailed(`trusted run ${runId} used unexpected workflow ${run.path}`);
-            }
 
   deb-build-and-smoke:
     name: deb-${{ matrix.distribution }}-${{ matrix.architecture }}
@@ -197,59 +166,26 @@ jobs:
     env:
       EXPECTED_SOURCE_SHA: ${{ inputs.expected_source_sha }}
       EXPECTED_VERSION: ${{ inputs.expected_version }}
-      TRUSTED_CI_RUN_ID: ${{ inputs.trusted_ci_run_id }}
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
-      - name: Download exact trusted CI artifact
-        if: ${{ inputs.trusted_ci_run_id != '' }}
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          github-token: ${{ github.token }}
-          repository: ${{ github.repository }}
-          run-id: ${{ inputs.trusted_ci_run_id }}
-          name: xgc2-lichtblick-${{ matrix.distribution }}-${{ matrix.architecture }}
-          path: .ci/trusted
-
-      - name: Verify and stage trusted CI artifact
-        if: ${{ inputs.trusted_ci_run_id != '' }}
-        run: |
-          set -euo pipefail
-          # shellcheck disable=SC1091
-          source lichtblick.lock
-          python3 .xgc2/scripts/xgc2_artifact_manifest.py verify-build \
-            --artifact-dir .ci/trusted \
-            --deb-output-dir .ci/debs \
-            --manifest-output-dir .ci/build-manifests \
-            --product xgc2-lichtblick \
-            --product-version "$EXPECTED_VERSION" \
-            --distribution "${{ matrix.distribution }}" \
-            --architecture "${{ matrix.architecture }}" \
-            --source-sha "$EXPECTED_SOURCE_SHA" \
-            --ci-run-id "$TRUSTED_CI_RUN_ID" \
-            --upstream-repository "$LICHTBLICK_REPOSITORY" \
-            --upstream-ref "$LICHTBLICK_REF" \
-            --upstream-sha "$LICHTBLICK_SHA"
-
-      - name: Build, install, and smoke-test fallback deb
-        if: ${{ inputs.trusted_ci_run_id == '' }}
+      - name: Build, install, and smoke-test release-train deb
         run: |
           set -euo pipefail
           ./.xgc2/scripts/build_deb_in_docker.sh \
             --ubuntu-version "${{ matrix.ubuntu_version }}" \
             --architecture "${{ matrix.architecture }}" \
             --work-dir "$RUNNER_TEMP/lichtblick-${{ matrix.distribution }}-${{ matrix.architecture }}" \
-            --output-dir "$GITHUB_WORKSPACE/.ci/debs"
+            --output-dir "$GITHUB_WORKSPACE/debs"
 
-      - name: Create fallback build manifest
-        if: ${{ inputs.trusted_ci_run_id == '' }}
+      - name: Create release-train build manifest
         run: |
           set -euo pipefail
           # shellcheck disable=SC1091
           source lichtblick.lock
           python3 .xgc2/scripts/xgc2_artifact_manifest.py build \
-            --deb-dir .ci/debs \
+            --deb-dir debs \
             --output-dir .ci/build-manifests \
             --product xgc2-lichtblick \
             --product-version "$EXPECTED_VERSION" \
@@ -264,115 +200,13 @@ jobs:
             --upstream-sha "$LICHTBLICK_SHA"
 
       - name: Upload normalized release input
+        if: ${{ inputs.prepare_action == 'release' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: xgc2-lichtblick-${{ matrix.distribution }}-${{ matrix.architecture }}-release-input
           path: |
-            .ci/debs/*.deb
+            debs/*.deb
             .ci/build-manifests/*.json
           retention-days: 14
           if-no-files-found: error
           include-hidden-files: true
-
-  publish-apt:
-    if: ${{ inputs.publish_apt && github.ref == 'refs/heads/main' }}
-    name: publish-apt-${{ matrix.distribution }}
-    needs: deb-build-and-smoke
-    runs-on: ubuntu-latest
-    environment:
-      name: xgc2-apt-production
-    concurrency:
-      group: xgc2-apt-${{ matrix.distribution }}
-      cancel-in-progress: false
-    strategy:
-      fail-fast: false
-      max-parallel: 1
-      matrix:
-        distribution:
-          - focal
-          - jammy
-          - noble
-    defaults:
-      run:
-        shell: bash
-    env:
-      EXPECTED_SOURCE_SHA: ${{ inputs.expected_source_sha }}
-      EXPECTED_VERSION: ${{ inputs.expected_version }}
-      RELEASE_ID: ${{ inputs.release_id }}
-      RELEASE_LOCK_DIGEST: ${{ inputs.release_lock_digest }}
-      TARGET_DISTRIBUTION: ${{ matrix.distribution }}
-      TRUSTED_CI_RUN_ID: ${{ inputs.trusted_ci_run_id }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-
-      - name: Download both architecture artifacts
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          pattern: xgc2-lichtblick-${{ matrix.distribution }}-*-release-input
-          path: release-input
-          merge-multiple: true
-
-      - name: Validate build artifacts and create release manifests
-        run: |
-          set -euo pipefail
-          # shellcheck disable=SC1091
-          source lichtblick.lock
-          for architecture in amd64 arm64; do
-            verify_args=(
-              verify-build
-              --artifact-dir release-input
-              --deb-output-dir staged/debs
-              --manifest-output-dir staged/build-manifests
-              --product xgc2-lichtblick
-              --product-version "$EXPECTED_VERSION"
-              --distribution "$TARGET_DISTRIBUTION"
-              --architecture "$architecture"
-              --source-sha "$EXPECTED_SOURCE_SHA"
-              --upstream-repository "$LICHTBLICK_REPOSITORY"
-              --upstream-ref "$LICHTBLICK_REF"
-              --upstream-sha "$LICHTBLICK_SHA"
-            )
-            if [[ -n "$TRUSTED_CI_RUN_ID" ]]; then
-              verify_args+=(--ci-run-id "$TRUSTED_CI_RUN_ID")
-            fi
-            python3 .xgc2/scripts/xgc2_artifact_manifest.py "${verify_args[@]}"
-          done
-
-          python3 .xgc2/scripts/xgc2_artifact_manifest.py release \
-            --deb-dir staged/debs \
-            --build-manifest-dir staged/build-manifests \
-            --publish-dir publish \
-            --product xgc2-lichtblick \
-            --product-version "$EXPECTED_VERSION" \
-            --distribution "$TARGET_DISTRIBUTION" \
-            --source-sha "$EXPECTED_SOURCE_SHA" \
-            --release-id "$RELEASE_ID" \
-            --release-lock-digest "$RELEASE_LOCK_DIGEST" \
-            --upstream-repository "$LICHTBLICK_REPOSITORY" \
-            --upstream-ref "$LICHTBLICK_REF" \
-            --upstream-sha "$LICHTBLICK_SHA" \
-            --target-architecture amd64 \
-            --target-architecture arm64
-
-      - name: Upload auditable release bundle
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: xgc2-lichtblick-${{ matrix.distribution }}-release
-          path: publish/
-          retention-days: 30
-          if-no-files-found: error
-          include-hidden-files: true
-
-      - name: Publish one distribution atomically
-        env:
-          APT_REPO_HOST: ${{ secrets.APT_REPO_HOST }}
-          APT_REPO_KNOWN_HOSTS: ${{ secrets.APT_REPO_KNOWN_HOSTS }}
-          APT_REPO_PORT: ${{ secrets.APT_REPO_PORT }}
-          APT_REPO_SSH_KEY: ${{ secrets.APT_REPO_SSH_KEY }}
-          APT_REPO_USER: ${{ secrets.APT_REPO_USER }}
-        run: |
-          set -euo pipefail
-          ./.xgc2/scripts/publish_self_hosted_apt.sh \
-            --deb-dir publish \
-            --distribution "$TARGET_DISTRIBUTION"

@@ -24,7 +24,6 @@ required_files=(
   .xgc2/scripts/build_deb_in_docker.sh
   .xgc2/scripts/check_package_compliance.sh
   .xgc2/scripts/smoke_test_installed.sh
-  .xgc2/scripts/publish_self_hosted_apt.sh
   .xgc2/scripts/xgc2_artifact_manifest.py
   .github/workflows/ci.yml
   .github/workflows/release.yml

@@ -98,27 +98,11 @@ pull requests. Each build uploads the deb and an `xgc2.build-artifact.v1`
 manifest for 14 days. CI never writes to APT.
 
 `release.yml` is manual and is normally dispatched by the XGC2 release
-orchestrator. It can reuse artifacts from an exact successful push CI run, or
-fall back to rebuilding the same six targets. Before publication it validates
-every deb and build manifest, combines amd64 and arm64 per distribution, creates
-`xgc2.release-artifact.v1`, and invokes one APT writer per distribution.
-
-Publication is restricted to `refs/heads/main` and the protected GitHub
-Environment named `xgc2-apt-production`. Create that Environment, allow only the
-`main` deployment branch, add a required reviewer, and configure these secrets
-on the Environment (not as repository-wide secrets) before enabling
-`publish_apt`:
-
-| Secret | Purpose |
-| --- | --- |
-| `APT_REPO_HOST` | SSH host of the XGC2 APT publisher |
-| `APT_REPO_PORT` | SSH port |
-| `APT_REPO_USER` | Restricted publishing account |
-| `APT_REPO_SSH_KEY` | Private SSH key for that account |
-| `APT_REPO_KNOWN_HOSTS` | Pinned SSH host key entry |
-
-The APT GPG private key is not a GitHub secret; it stays on the APT server.
-Only the final SSH publish step receives the five Environment secrets.
+orchestrator. It rebuilds the locked source for all six targets, optionally
+using the release-scoped staging APT overlay, and uploads only trusted
+`xgc2.build-artifact.v1` inputs. The central publisher in `xgc2-devops`
+validates and promotes those artifacts; this repository has no production APT
+credentials and cannot write the repository.
 
 `update-lichtblick.yml` checks the canonical repository for the highest stable
 semantic version tag. It only proceeds after the source fork exposes the same

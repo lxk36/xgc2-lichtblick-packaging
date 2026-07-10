@@ -15,7 +15,6 @@ from typing import Any
 
 
 BUILD_SCHEMA = "xgc2.build-artifact.v1"
-RELEASE_SCHEMA = "xgc2.release-artifact.v1"
 SUPPORTED_ARCHITECTURES = ("amd64", "arm64")
 DEB_FIELDS = ("file", "package", "version", "architecture", "sha256", "size")
 
@@ -385,113 +384,6 @@ def verify_build(args: argparse.Namespace) -> None:
     copy_unique(manifest_path, manifest_output / manifest_path.name)
 
 
-def create_release(args: argparse.Namespace) -> None:
-    validate_requested_identity(args, include_version=True)
-    require_string(args.release_id, "release_id")
-    require_string(args.release_lock_digest, "release_lock_digest", HEX64, empty=True)
-
-    targets = args.target_architecture or list(SUPPORTED_ARCHITECTURES)
-    for target in targets:
-        require_architecture(target)
-    if len(targets) != len(set(targets)):
-        raise ValueError("target architectures must not be repeated")
-    if set(targets) != set(SUPPORTED_ARCHITECTURES):
-        raise ValueError("release must aggregate exactly amd64 and arm64")
-
-    deb_root = Path(args.deb_dir).resolve(strict=True)
-    build_root = Path(args.build_manifest_dir).resolve(strict=True)
-    reject_symlinks(deb_root)
-    reject_symlinks(build_root)
-
-    selected: dict[
-        str, tuple[Path, dict[str, Any], list[tuple[dict[str, Any], Path]]]
-    ] = {}
-    for build_path in sorted(build_root.rglob("*.json")):
-        build = read_json(build_path)
-        if build.get("schema") != BUILD_SCHEMA:
-            continue
-        architecture = build.get("architecture")
-        if architecture not in targets:
-            continue
-        if not manifest_identity_matches(
-            build,
-            args,
-            version=args.product_version,
-            architecture=str(architecture),
-        ):
-            continue
-        validate_manifest_identity(
-            build,
-            build_path,
-            args,
-            schema=BUILD_SCHEMA,
-            version=args.product_version,
-            architecture=str(architecture),
-        )
-        validate_ci(build, build_path)
-        debs = validate_debs(build, build_path, deb_root, str(architecture), near=False)
-        validate_product_debs(
-            [declared for declared, _deb in debs],
-            product=args.product,
-            version=args.product_version,
-            distribution=args.distribution,
-        )
-        if architecture in selected:
-            raise ValueError(f"multiple matching build manifests for {architecture}")
-        selected[str(architecture)] = (build_path, build, debs)
-
-    missing = sorted(set(targets) - set(selected))
-    if missing:
-        raise ValueError(f"missing matching build manifests for: {', '.join(missing)}")
-
-    publish_root = Path(args.publish_dir)
-    published_at = utc_now()
-    manifest_destinations: set[Path] = set()
-    for architecture in SUPPORTED_ARCHITECTURES:
-        build_path, build, debs = selected[architecture]
-        canonical_build_name = (
-            f"{args.product}_{args.distribution}_{architecture}.build.json"
-        )
-        included_build = publish_root / "build-manifests" / canonical_build_name
-        copy_unique(build_path, included_build)
-        build_digest = sha256(included_build)
-
-        for _declared, deb in debs:
-            copy_unique(deb, publish_root / deb.name)
-
-        release_payload = {
-            "schema": RELEASE_SCHEMA,
-            "product": args.product,
-            "version": args.product_version,
-            "distribution": args.distribution,
-            "architecture": architecture,
-            "source_sha": args.source_sha,
-            "upstream_repository": args.upstream_repository,
-            "upstream_ref": args.upstream_ref,
-            "upstream_sha": args.upstream_sha,
-            "ci": build["ci"],
-            "debs": build["debs"],
-            "release_id": args.release_id,
-            "release_lock_digest": args.release_lock_digest,
-            "build_manifest": included_build.relative_to(publish_root).as_posix(),
-            "build_manifest_digest": build_digest,
-            "published_at": published_at,
-        }
-        for declared, _deb in debs:
-            destination = (
-                publish_root
-                / "manifests"
-                / args.product
-                / args.distribution
-                / architecture
-                / f"{declared['package']}_{declared['version']}.json"
-            )
-            if destination in manifest_destinations:
-                raise ValueError(f"duplicate release manifest destination: {destination}")
-            manifest_destinations.add(destination)
-            write_json(destination, release_payload)
-
-
 def add_upstream_arguments(command: argparse.ArgumentParser) -> None:
     command.add_argument("--upstream-repository", required=True)
     command.add_argument("--upstream-ref", required=True)
@@ -529,19 +421,6 @@ def parser() -> argparse.ArgumentParser:
     verify.add_argument("--ci-run-id")
     verify.set_defaults(func=verify_build)
 
-    release = sub.add_parser("release", help=f"create {RELEASE_SCHEMA}")
-    release.add_argument("--deb-dir", required=True)
-    release.add_argument("--build-manifest-dir", required=True)
-    release.add_argument("--publish-dir", required=True)
-    release.add_argument("--product", required=True)
-    release.add_argument("--product-version", required=True)
-    release.add_argument("--distribution", required=True)
-    release.add_argument("--source-sha", required=True)
-    add_upstream_arguments(release)
-    release.add_argument("--release-id", required=True)
-    release.add_argument("--release-lock-digest", default="")
-    release.add_argument("--target-architecture", action="append")
-    release.set_defaults(func=create_release)
     return result
 
 

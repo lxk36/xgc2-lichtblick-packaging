@@ -11,8 +11,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 TOOL = ROOT / ".xgc2/scripts/xgc2_artifact_manifest.py"
-DEVOPS_ROOT = ROOT.parents[2]
-APT_VALIDATOR = DEVOPS_ROOT / "platforms/apt-repo/container/bin/xgc2-validate-release-upload"
 
 
 def read_assignment_file(path: Path) -> dict[str, str]:
@@ -46,7 +44,6 @@ SOURCE_SHA = "1" * 40
 UPSTREAM_REPOSITORY = LOCK["LICHTBLICK_REPOSITORY"]
 UPSTREAM_REF = LOCK["LICHTBLICK_REF"]
 UPSTREAM_SHA = LOCK["LICHTBLICK_SHA"]
-LOCK_DIGEST = "2" * 64
 
 
 def file_sha256(path: Path) -> str:
@@ -177,27 +174,6 @@ class ArtifactManifestTests(unittest.TestCase):
             expected_returncode=expected_returncode,
         )
 
-    def release(self, *, expected_returncode: int = 0) -> subprocess.CompletedProcess[str]:
-        return self.run_tool(
-            "release",
-            "--deb-dir",
-            str(self.work / "verified/debs"),
-            "--build-manifest-dir",
-            str(self.work / "verified/build-manifests"),
-            "--publish-dir",
-            str(self.work / "publish"),
-            *self.identity_arguments(),
-            "--release-id",
-            "release-12345",
-            "--release-lock-digest",
-            LOCK_DIGEST,
-            "--target-architecture",
-            "amd64",
-            "--target-architecture",
-            "arm64",
-            expected_returncode=expected_returncode,
-        )
-
     def test_build_records_pinned_upstream_and_real_deb_metadata(self) -> None:
         for architecture in ("amd64", "arm64"):
             with self.subTest(architecture=architecture):
@@ -289,64 +265,6 @@ class ArtifactManifestTests(unittest.TestCase):
         result = self.verify_build("amd64", expected_returncode=2)
         self.assertIn("deb metadata mismatch", result.stderr)
         self.assertFalse((self.work / "verified/debs" / deb.name).exists())
-
-    def test_release_requires_and_aggregates_both_architectures(self) -> None:
-        for architecture in ("amd64", "arm64"):
-            self.create_build(architecture)
-            self.verify_build(architecture)
-        self.release()
-
-        publish = self.work / "publish"
-        self.assertEqual(len(list(publish.glob("*.deb"))), 2)
-        self.assertEqual(len(list((publish / "build-manifests").glob("*.json"))), 2)
-        releases = sorted((publish / "manifests").rglob("*.json"))
-        self.assertEqual(len(releases), 2)
-        for release_path in releases:
-            release = json.loads(release_path.read_text(encoding="utf-8"))
-            architecture = release["architecture"]
-            build = publish / release["build_manifest"]
-            self.assertEqual(release["schema"], "xgc2.release-artifact.v1")
-            self.assertEqual(release["release_id"], "release-12345")
-            self.assertEqual(release["release_lock_digest"], LOCK_DIGEST)
-            self.assertEqual(release["source_sha"], SOURCE_SHA)
-            self.assertEqual(release["upstream_sha"], UPSTREAM_SHA)
-            self.assertEqual(release["build_manifest_digest"], file_sha256(build))
-            self.assertEqual(
-                release_path.relative_to(publish).as_posix(),
-                f"manifests/{PRODUCT}/{DIST}/{architecture}/{PRODUCT}_{DEB_VERSION}.json",
-            )
-
-        if APT_VALIDATOR.is_file():
-            validation = subprocess.run(
-                [
-                    "python3",
-                    str(APT_VALIDATOR),
-                    "--input",
-                    str(publish),
-                    "--manifest-stage",
-                    str(self.work / "manifest-stage"),
-                    "--distribution",
-                    DIST,
-                    "--architectures",
-                    "amd64",
-                    "arm64",
-                ],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-            )
-            self.assertEqual(
-                validation.returncode,
-                0,
-                f"stdout:\n{validation.stdout}\nstderr:\n{validation.stderr}",
-            )
-
-    def test_release_fails_when_one_architecture_is_missing(self) -> None:
-        self.create_build("amd64")
-        self.verify_build("amd64")
-        result = self.release(expected_returncode=2)
-        self.assertIn("missing matching build manifests for: arm64", result.stderr)
-
 
 if __name__ == "__main__":
     unittest.main()

@@ -87,6 +87,7 @@ fi
 # `bash -lc`; its continuations are interpreted inside the container.
 # shellcheck disable=SC1004
 docker run "${docker_run_args[@]}" \
+  -e XGC2_APT_OVERLAY_URL="${XGC2_APT_OVERLAY_URL:-}" \
   -e DEBIAN_FRONTEND=noninteractive \
   -e PACKAGE_DISTRIBUTION="${distribution}" \
   -e TARGET_ARCH="${architecture}" \

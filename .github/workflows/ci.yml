@@ -78,7 +78,7 @@ jobs:
             --ubuntu-version "${{ matrix.ubuntu_version }}" \
             --architecture "${{ matrix.architecture }}" \
             --work-dir "$RUNNER_TEMP/lichtblick-${{ matrix.distribution }}-${{ matrix.architecture }}" \
-            --output-dir "$GITHUB_WORKSPACE/.ci/debs"
+            --output-dir "$GITHUB_WORKSPACE/debs"
 
       - name: Create trusted build manifest
         run: |
@@ -87,7 +87,7 @@ jobs:
           source lichtblick.lock
           product_version="$(awk -F': *' '/^version:/ {print $2; exit}' .xgc2/product.yml)"
           python3 .xgc2/scripts/xgc2_artifact_manifest.py build \
-            --deb-dir .ci/debs \
+            --deb-dir debs \
             --output-dir .ci/build-manifests \
             --product xgc2-lichtblick \
             --product-version "$product_version" \
@@ -106,7 +106,7 @@ jobs:
         with:
           name: xgc2-lichtblick-${{ matrix.distribution }}-${{ matrix.architecture }}
           path: |
-            .ci/debs/*.deb
+            debs/*.deb
             .ci/build-manifests/*.json
           retention-days: 14
           if-no-files-found: error
