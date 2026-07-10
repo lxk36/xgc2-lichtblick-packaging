@@ -138,7 +138,7 @@ validate_deb() {
   dpkg-deb --contents "${deb}" > "${contents_file}"
   grep -Fq './opt/Lichtblick/LICENSE.electron.txt' "${contents_file}"
   grep -Fq './opt/Lichtblick/LICENSES.chromium.html' "${contents_file}"
-  for doc_file in README.md lichtblick.lock LICENSE.upstream; do
+  for doc_file in README.md lichtblick.lock LICENSE.upstream copyright; do
     grep -Fq "./usr/share/doc/xgc2-lichtblick/${doc_file}" "${contents_file}"
   done
   if grep -Fq './usr/share/doc/lichtblick/' "${contents_file}"; then

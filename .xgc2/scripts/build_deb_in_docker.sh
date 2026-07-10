@@ -143,7 +143,7 @@ docker run "${docker_run_args[@]}" \
       echo "Expected exact package is missing: ${built_deb}" >&2
       exit 1
     fi
-    apt-get install -y "${built_deb}"
+    apt-get install -y --no-install-recommends "${built_deb}"
     /workspace/packaging/.xgc2/scripts/smoke_test_installed.sh
     apt-get purge -y xgc2-lichtblick
     if dpkg-query -W -f="\${db:Status-Abbrev}" xgc2-lichtblick 2>/dev/null | grep -q "^ii"; then

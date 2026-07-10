@@ -19,6 +19,7 @@ status="$(dpkg-query -W -f='${db:Status-Abbrev}' "${package_name}")"
 [[ -f /usr/share/doc/xgc2-lichtblick/README.md ]]
 [[ -f /usr/share/doc/xgc2-lichtblick/lichtblick.lock ]]
 [[ -f /usr/share/doc/xgc2-lichtblick/LICENSE.upstream ]]
+[[ -f /usr/share/doc/xgc2-lichtblick/copyright ]]
 if dpkg-query -L "${package_name}" | grep -q '^/usr/share/doc/lichtblick/'; then
   echo "Legacy upstream documentation directory remains installed." >&2
   exit 1

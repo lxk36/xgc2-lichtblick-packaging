@@ -47,6 +47,10 @@ if [[ ! "${node_major}" =~ ^[0-9]+$ ]] || (( node_major < LICHTBLICK_NODE_MAJOR 
   echo "Node.js >=${LICHTBLICK_NODE_MAJOR} is required; found $(node --version)." >&2
   exit 1
 fi
+if [[ "$(node --version)" != "v${LICHTBLICK_NODE_VERSION}" ]]; then
+  echo "Node.js v${LICHTBLICK_NODE_VERSION} is pinned; found $(node --version)." >&2
+  exit 1
+fi
 
 product_file="${repo_root}/.xgc2/product.yml"
 if [[ ! -f "${product_file}" ]]; then
@@ -86,6 +90,22 @@ if [[ "${upstream_package_manager}" != "yarn@${LICHTBLICK_YARN_VERSION}" ]]; the
   echo "Upstream packageManager ${upstream_package_manager} does not match yarn@${LICHTBLICK_YARN_VERSION}." >&2
   exit 1
 fi
+node - "${source_dir}/package.json" "${LICHTBLICK_NODE_VERSION}" <<'NODE'
+const packageJson = require(process.argv[2]);
+const pinned = process.argv[3].split(".").map(Number);
+const engine = String(packageJson.engines?.node ?? "");
+const match = /^\s*>=\s*(\d+)(?:\.(\d+))?(?:\.(\d+))?\s*$/.exec(engine);
+if (match == null) {
+  throw new Error(`unsupported engines.node constraint: ${JSON.stringify(engine)}`);
+}
+const minimum = [Number(match[1]), Number(match[2] ?? 0), Number(match[3] ?? 0)];
+for (let index = 0; index < 3; index++) {
+  if (pinned[index] > minimum[index]) process.exit(0);
+  if (pinned[index] < minimum[index]) {
+    throw new Error(`pinned Node ${pinned.join(".")} is below engines.node ${engine}`);
+  }
+}
+NODE
 
 corepack enable yarn
 actual_yarn_version="$(cd "${source_dir}" && corepack yarn --version)"
@@ -98,7 +118,24 @@ export CI=true
 export SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-$(git -C "${source_dir}" show -s --format=%ct HEAD)}"
 export YARN_ENABLE_IMMUTABLE_INSTALLS=true
 
-rm -rf -- "${source_dir}/dist" "${source_dir}/desktop/.webpack" "${work_dir}"
+resolved_work_dir="$(realpath -m -- "${work_dir}")"
+resolved_source_parent="$(dirname "$(realpath -m -- "${source_dir}")")"
+case "${resolved_work_dir}" in
+  /|"${HOME:-/__xgc2_no_home__}"|"${repo_root}"|"$(realpath -m -- "${source_dir}")"|"$(realpath -m -- "${output_dir}")")
+    echo "Refusing unsafe build work directory: ${resolved_work_dir}" >&2
+    exit 1
+    ;;
+esac
+case "${resolved_work_dir}" in
+  "${repo_root}/.work/"*|"${resolved_source_parent}/"*) ;;
+  *)
+    echo "Build work directory must be inside ${repo_root}/.work or ${resolved_source_parent}." >&2
+    exit 1
+    ;;
+esac
+
+rm -rf -- "${source_dir}/dist" "${source_dir}/desktop/.webpack" "${resolved_work_dir}"
+work_dir="${resolved_work_dir}"
 mkdir -p "${work_dir}" "${output_dir}"
 
 (
@@ -219,6 +256,7 @@ fi
 install -m 0644 "${repo_root}/README.md" "${doc_dir}/README.md"
 install -m 0644 "${repo_root}/lichtblick.lock" "${doc_dir}/lichtblick.lock"
 install -m 0644 "${source_dir}/LICENSE" "${doc_dir}/LICENSE.upstream"
+install -m 0644 "${source_dir}/LICENSE" "${doc_dir}/copyright"
 
 (
   cd "${pkg_root}"
@@ -245,7 +283,7 @@ if [[ ! -f "${pkg_root}/opt/Lichtblick/LICENSE.electron.txt" ]] ||
   echo "Upstream Electron/Chromium license files are missing from the package." >&2
   exit 1
 fi
-for doc_file in README.md lichtblick.lock LICENSE.upstream; do
+for doc_file in README.md lichtblick.lock LICENSE.upstream copyright; do
   if [[ ! -f "${doc_dir}/${doc_file}" ]]; then
     echo "Required package documentation is missing: ${doc_file}" >&2
     exit 1
