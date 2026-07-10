@@ -22,7 +22,7 @@ jobs:
         shell: bash
     steps:
       - name: Checkout main
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: main
           fetch-depth: 0
@@ -34,15 +34,42 @@ jobs:
           # shellcheck disable=SC1091
           source lichtblick.lock
 
+          resolve_remote_tag_commit() {
+            local repository="$1"
+            local tag="$2"
+            local refs peeled direct
+            refs="$(git ls-remote --tags "$repository" \
+              "refs/tags/$tag" "refs/tags/$tag^{}")"
+            peeled="$(awk '$2 ~ /\^\{\}$/ {print $1}' <<< "$refs")"
+            direct="$(awk '$2 !~ /\^\{\}$/ {print $1}' <<< "$refs")"
+            printf '%s\n' "${peeled:-$direct}"
+          }
+
           latest_tag="$({
-            git ls-remote --tags --refs "$LICHTBLICK_REPOSITORY" 'refs/tags/v*' |
+            git ls-remote --tags --refs "$LICHTBLICK_CANONICAL_REPOSITORY" 'refs/tags/v*' |
               awk '{sub("refs/tags/", "", $2); print $2}' |
               grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' || true
           } | sort -V | tail -n1)"
           [[ -n "$latest_tag" ]] || {
-            echo "No stable semantic-version tag found in $LICHTBLICK_REPOSITORY" >&2
+            echo "No stable semantic-version tag found in $LICHTBLICK_CANONICAL_REPOSITORY" >&2
             exit 1
           }
+
+          canonical_sha="$(resolve_remote_tag_commit \
+            "$LICHTBLICK_CANONICAL_REPOSITORY" "$latest_tag")"
+          fork_sha="$(resolve_remote_tag_commit "$LICHTBLICK_REPOSITORY" "$latest_tag")"
+          [[ "$canonical_sha" =~ ^[0-9a-f]{40}$ ]] || {
+            echo "Cannot resolve canonical tag $latest_tag" >&2
+            exit 1
+          }
+          if [[ -z "$fork_sha" ]]; then
+            echo "::error title=Lichtblick source fork is behind::Sync $latest_tag from $LICHTBLICK_CANONICAL_REPOSITORY into $LICHTBLICK_REPOSITORY before updating packages."
+            exit 1
+          fi
+          if [[ "$fork_sha" != "$canonical_sha" ]]; then
+            echo "Source fork tag $latest_tag is $fork_sha, but canonical is $canonical_sha" >&2
+            exit 1
+          fi
 
           if [[ "$latest_tag" == "$LICHTBLICK_REF" ]]; then
             echo "update=false" >> "$GITHUB_OUTPUT"
@@ -59,6 +86,10 @@ jobs:
           checkout="$RUNNER_TEMP/lichtblick-source"
           git clone --depth 1 --branch "$latest_tag" "$LICHTBLICK_REPOSITORY" "$checkout"
           latest_sha="$(git -C "$checkout" rev-parse HEAD)"
+          [[ "$latest_sha" == "$canonical_sha" ]] || {
+            echo "Cloned source SHA $latest_sha does not match canonical $canonical_sha" >&2
+            exit 1
+          }
           latest_version="${latest_tag#v}"
 
           readarray -t toolchain < <(python3 - "$checkout/package.json" <<'PY'
@@ -101,7 +132,7 @@ jobs:
             node_major="${minimum_node_version%%.*}"
             checksums="$(curl --fail --location --retry 5 \
               "https://nodejs.org/dist/latest-v${node_major}.x/SHASUMS256.txt")"
-            x64_line="$(grep -E "  node-v[0-9]+\\.[0-9]+\\.[0-9]+-linux-x64\\.tar\\.xz$" <<< "$checksums")"
+            x64_line="$(grep -E "  node-v[0-9]+\\.[0-9]+\\.[0-9]+-linux-x64\\.tar\\.xz$" <<< "$checksums" || true)"
             [[ "$(wc -l <<< "$x64_line")" == 1 ]] || {
               echo "Cannot identify one x64 Node archive for major $node_major" >&2
               exit 1
@@ -113,6 +144,11 @@ jobs:
             node_arm64_sha256="$(awk -v archive="$arm64_archive" '$2 == archive {print $1}' <<< "$checksums")"
             [[ "$node_x64_sha256" =~ ^[0-9a-f]{64}$ && "$node_arm64_sha256" =~ ^[0-9a-f]{64}$ ]] || {
               echo "Cannot resolve pinned Node archive hashes for $node_version" >&2
+              exit 1
+            }
+            selected_node="$(printf '%s\n' "$node_version" "$minimum_node_version" | sort -V | tail -n1)"
+            [[ "$selected_node" == "$node_version" ]] || {
+              echo "Latest Node $node_version does not satisfy >=$minimum_node_version" >&2
               exit 1
             }
           fi
@@ -205,10 +241,39 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
+          ensure_review_ci() {
+            local head_sha="$1"
+            local usable_runs
+            usable_runs="$(gh api --method GET \
+              "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs" \
+              -f head_sha="$head_sha" \
+              -f per_page=30 \
+              --jq '[.workflow_runs[] | select(
+                .conclusion == "success" or
+                .status == "queued" or
+                .status == "in_progress" or
+                .status == "waiting" or
+                .status == "pending"
+              )] | length')"
+            if [[ "$usable_runs" == 0 ]]; then
+              gh workflow run ci.yml --ref "$branch"
+            else
+              echo "A successful or active CI run already exists for $head_sha."
+            fi
+          }
+
           remote_sha="$(git ls-remote --heads origin "refs/heads/$branch" | awk '{print $1}')"
           pr_number="$(gh pr list --state open --head "$branch" --json number --jq '.[0].number // empty')"
           if [[ -n "$remote_sha" ]]; then
             git fetch --no-tags origin "$remote_sha"
+            merge_base="$(git merge-base HEAD "$remote_sha")"
+            unexpected_paths="$(git diff --name-only "$merge_base" "$remote_sha" |
+              grep -Ev '^(lichtblick\.lock|\.xgc2/product\.yml)$' || true)"
+            if [[ -n "$unexpected_paths" ]]; then
+              echo "Refusing to overwrite update branch with unexpected paths:" >&2
+              printf '%s\n' "$unexpected_paths" >&2
+              exit 1
+            fi
             if git diff --quiet "$remote_sha" -- lichtblick.lock .xgc2/product.yml; then
               if [[ -z "$pr_number" ]]; then
                 gh pr create \
@@ -216,10 +281,10 @@ jobs:
                   --head "$branch" \
                   --title "$title" \
                   --body "$body"
-                gh workflow run ci.yml --ref "$branch"
               else
-                echo "Update branch and pull request #$pr_number already contain $NEW_REF; no rebuild needed."
+                echo "Update branch and pull request #$pr_number already contain $NEW_REF."
               fi
+              ensure_review_ci "$remote_sha"
               exit 0
             fi
           fi
@@ -247,4 +312,4 @@ jobs:
 
           # Pushes and pull requests created with GITHUB_TOKEN do not recursively
           # start CI, so dispatch the six-package review matrix explicitly.
-          gh workflow run ci.yml --ref "$branch"
+          ensure_review_ci "$(git rev-parse HEAD)"

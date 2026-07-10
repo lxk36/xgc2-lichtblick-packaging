@@ -86,10 +86,13 @@ if [[ "${upstream_version}" != "${LICHTBLICK_VERSION}" ]]; then
   echo "Upstream package.json version ${upstream_version} does not match ${LICHTBLICK_VERSION}." >&2
   exit 1
 fi
-if [[ "${upstream_package_manager}" != "yarn@${LICHTBLICK_YARN_VERSION}" ]]; then
-  echo "Upstream packageManager ${upstream_package_manager} does not match yarn@${LICHTBLICK_YARN_VERSION}." >&2
-  exit 1
-fi
+case "${upstream_package_manager}" in
+  "yarn@${LICHTBLICK_YARN_VERSION}"|"yarn@${LICHTBLICK_YARN_VERSION}+"*) ;;
+  *)
+    echo "Upstream packageManager ${upstream_package_manager} does not match yarn@${LICHTBLICK_YARN_VERSION}." >&2
+    exit 1
+    ;;
+esac
 node - "${source_dir}/package.json" "${LICHTBLICK_NODE_VERSION}" <<'NODE'
 const packageJson = require(process.argv[2]);
 const pinned = process.argv[3].split(".").map(Number);
@@ -172,6 +175,18 @@ fi
 
 pkg_root="${work_dir}/package-root"
 dpkg-deb --raw-extract "${upstream_deb}" "${pkg_root}"
+
+# XGC2 distributes this Deb exclusively through APT. Electron's DebUpdater
+# otherwise bypasses the signed repository and installs GitHub release assets.
+for updater_file in \
+  "${pkg_root}/opt/Lichtblick/resources/package-type" \
+  "${pkg_root}/opt/Lichtblick/resources/app-update.yml"; do
+  if [[ ! -f "${updater_file}" ]]; then
+    echo "Expected upstream updater marker is missing: ${updater_file}" >&2
+    exit 1
+  fi
+  rm -f -- "${updater_file}"
+done
 
 for maintainer_script in postinst postrm; do
   if [[ ! -x "${pkg_root}/DEBIAN/${maintainer_script}" ]]; then

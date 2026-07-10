@@ -1,6 +1,7 @@
 # shellcheck shell=bash
 # Immutable upstream and toolchain inputs for the XGC2 Lichtblick package.
 LICHTBLICK_REPOSITORY=https://github.com/lxk36/xgc2-lichtblick.git
+LICHTBLICK_CANONICAL_REPOSITORY=https://github.com/lichtblick-suite/lichtblick.git
 LICHTBLICK_REF=v1.25.0
 LICHTBLICK_SHA=3fad978b6954a51d750b5b027c529a7c588e7ece
 LICHTBLICK_VERSION=1.25.0

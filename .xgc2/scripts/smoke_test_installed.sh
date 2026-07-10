@@ -16,6 +16,8 @@ status="$(dpkg-query -W -f='${db:Status-Abbrev}' "${package_name}")"
 [[ -f /usr/share/mime/packages/lichtblick.xml ]]
 [[ -f /opt/Lichtblick/LICENSE.electron.txt ]]
 [[ -f /opt/Lichtblick/LICENSES.chromium.html ]]
+[[ ! -e /opt/Lichtblick/resources/package-type ]]
+[[ ! -e /opt/Lichtblick/resources/app-update.yml ]]
 [[ -f /usr/share/doc/xgc2-lichtblick/README.md ]]
 [[ -f /usr/share/doc/xgc2-lichtblick/lichtblick.lock ]]
 [[ -f /usr/share/doc/xgc2-lichtblick/LICENSE.upstream ]]

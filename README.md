@@ -22,9 +22,10 @@ server. Application development and upstream synchronization belong in
 [`lxk36/xgc2-lichtblick`](https://github.com/lxk36/xgc2-lichtblick). Repository
 signing and index publication remain server-side operations.
 
-The initial product release pins `v1.25.0` by both tag and commit SHA. A tag is
-never accepted on its own: every build verifies that the fetched checkout still
-matches the SHA recorded in `lichtblick.lock`.
+The initial product release pins the XGC2 source fork's `v1.25.0` by both tag
+and commit SHA. A tag is never accepted on its own: every build verifies that
+the fetched checkout still matches the SHA recorded in `lichtblick.lock` and
+that the same tag has the same SHA in the canonical Lichtblick repository.
 
 ## Package matrix
 
@@ -41,6 +42,10 @@ replaces the upstream `lichtblick` package so both applications cannot overwrite
 the same desktop files and executable. The installed package also carries the
 source lock, packaging README, upstream license, and original changelog under
 `/usr/share/doc/xgc2-lichtblick/`.
+
+The upstream Electron self-updater is disabled during Debian repackaging. XGC2
+workstations must receive Lichtblick upgrades through `apt`; the application
+cannot download and replace itself with an upstream `lichtblick` package.
 
 ## Local build
 
@@ -103,9 +108,12 @@ on the Environment (not as repository-wide secrets) before enabling
 The APT GPG private key is not a GitHub secret; it stays on the APT server.
 Only the final SSH publish step receives the five Environment secrets.
 
-`update-lichtblick.yml` checks the source fork for the highest stable semantic
-version tag. When a newer tag exists, it opens or refreshes a pull request that
-updates `lichtblick.lock`, the product version, and all distribution versions.
+`update-lichtblick.yml` checks the canonical repository for the highest stable
+semantic version tag. It only proceeds after the source fork exposes the same
+tag at the same commit; otherwise the scheduled run fails with an explicit fork
+sync instruction. When a mirrored newer tag exists, it opens or refreshes a
+pull request that updates `lichtblick.lock`, the product version, and all
+distribution versions.
 It never auto-merges: the full package matrix must pass before a maintainer
 accepts the source upgrade. Because branches and pull requests created by the
 repository `GITHUB_TOKEN` do not start ordinary push CI, the updater explicitly

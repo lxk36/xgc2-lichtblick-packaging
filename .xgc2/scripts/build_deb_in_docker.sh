@@ -66,13 +66,22 @@ if [[ -n "${docker_network}" ]]; then
   docker_run_args+=(--network "${docker_network}")
 fi
 if [[ "${docker_network}" == host ]]; then
+  proxy_forwarded=false
   for proxy_variable in \
     HTTP_PROXY HTTPS_PROXY ALL_PROXY NO_PROXY \
     http_proxy https_proxy all_proxy no_proxy; do
     if [[ -n "${!proxy_variable:-}" ]]; then
       docker_run_args+=(-e "${proxy_variable}")
+      case "${proxy_variable}" in
+        HTTP_PROXY|HTTPS_PROXY|ALL_PROXY|http_proxy|https_proxy|all_proxy)
+          proxy_forwarded=true
+          ;;
+      esac
     fi
   done
+  if [[ "${proxy_forwarded}" == true ]]; then
+    docker_run_args+=(-e "ELECTRON_GET_USE_PROXY=1")
+  fi
 fi
 # The final argument is a script intentionally passed as a single string to
 # `bash -lc`; its continuations are interpreted inside the container.

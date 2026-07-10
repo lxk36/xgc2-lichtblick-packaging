@@ -42,6 +42,7 @@ done
 # shellcheck disable=SC1091
 source lichtblick.lock
 [[ "${LICHTBLICK_REPOSITORY}" == "https://github.com/lxk36/xgc2-lichtblick.git" ]]
+[[ "${LICHTBLICK_CANONICAL_REPOSITORY}" == "https://github.com/lichtblick-suite/lichtblick.git" ]]
 [[ "${LICHTBLICK_REF}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
 [[ "${LICHTBLICK_SHA}" =~ ^[0-9a-f]{40}$ ]]
 [[ "${LICHTBLICK_VERSION}" == "${LICHTBLICK_REF#v}" ]]
@@ -63,8 +64,16 @@ if [[ ! "${product_revision}" =~ ^[1-9][0-9]*$ ]]; then
   echo "Invalid product package revision: ${product_revision}." >&2
   exit 1
 fi
-grep -Eq '^  depends:$' .xgc2/product.yml
-grep -Eq '^    - libasound2$' .xgc2/product.yml
+if ! awk '
+  /^apt:[[:space:]]*$/ { in_apt = 1; next }
+  in_apt && /^[^[:space:]]/ { exit(found ? 0 : 1) }
+  in_apt && /^[[:space:]]+depends:[[:space:]]*$/ { in_depends = 1; next }
+  in_depends && /^[[:space:]]*-[[:space:]]*libasound2[[:space:]]*$/ { found = 1 }
+  END { exit(found ? 0 : 1) }
+' .xgc2/product.yml; then
+  echo "apt.depends must include libasound2." >&2
+  exit 1
+fi
 
 apt_version_for() {
   local distribution="$1"
@@ -138,6 +147,10 @@ validate_deb() {
   dpkg-deb --contents "${deb}" > "${contents_file}"
   grep -Fq './opt/Lichtblick/LICENSE.electron.txt' "${contents_file}"
   grep -Fq './opt/Lichtblick/LICENSES.chromium.html' "${contents_file}"
+  if grep -Eq '\./opt/Lichtblick/resources/(package-type|app-update\.yml)$' "${contents_file}"; then
+    echo "Electron self-update metadata remains in ${deb}." >&2
+    exit 1
+  fi
   for doc_file in README.md lichtblick.lock LICENSE.upstream copyright; do
     grep -Fq "./usr/share/doc/xgc2-lichtblick/${doc_file}" "${contents_file}"
   done

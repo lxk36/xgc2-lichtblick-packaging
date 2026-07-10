@@ -58,6 +58,33 @@ source_is_ready() {
   [[ -z "$(git -C "${source_dir}" ls-files --others --exclude-standard)" ]]
 }
 
+canonical_refs=""
+attempt=1
+while ! canonical_refs="$(git ls-remote \
+  --tags \
+  "${LICHTBLICK_CANONICAL_REPOSITORY}" \
+  "refs/tags/${LICHTBLICK_REF}" \
+  "refs/tags/${LICHTBLICK_REF}^{}")"; do
+  if (( attempt >= max_attempts )); then
+    echo "Failed to resolve canonical Lichtblick tag after ${attempt} attempts." >&2
+    exit 1
+  fi
+  echo "Retrying canonical Lichtblick tag lookup after attempt ${attempt}/${max_attempts}..." >&2
+  sleep $((attempt * 5))
+  attempt=$((attempt + 1))
+done
+canonical_tag_sha="$(awk -v peeled="refs/tags/${LICHTBLICK_REF}^{}" \
+  '$2 == peeled { print $1 }' <<< "${canonical_refs}")"
+if [[ -z "${canonical_tag_sha}" ]]; then
+  canonical_tag_sha="$(awk -v direct="refs/tags/${LICHTBLICK_REF}" \
+    '$2 == direct { print $1 }' <<< "${canonical_refs}")"
+fi
+if [[ ! "${canonical_tag_sha}" =~ ^[0-9a-f]{40}$ ]] ||
+   [[ "${canonical_tag_sha}" != "${LICHTBLICK_SHA}" ]]; then
+  echo "Canonical ${LICHTBLICK_REF} is ${canonical_tag_sha:-<missing>}; expected ${LICHTBLICK_SHA}." >&2
+  exit 1
+fi
+
 # Preserve the large dependency cache when upgrading from the first packaging
 # script revision, which placed its marker in the checkout worktree.
 if [[ -d "${source_dir}/.git" && -f "${source_dir}/.xgc2-packaging-source" &&
@@ -130,3 +157,4 @@ while true; do
 done
 
 echo "Fetched ${LICHTBLICK_REPOSITORY}@${LICHTBLICK_REF} (${LICHTBLICK_SHA})."
+echo "Verified the same tag and SHA in ${LICHTBLICK_CANONICAL_REPOSITORY}."

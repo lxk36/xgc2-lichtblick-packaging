@@ -15,8 +15,8 @@ DEVOPS_ROOT = ROOT.parents[2]
 APT_VALIDATOR = DEVOPS_ROOT / "platforms/apt-repo/container/bin/xgc2-validate-release-upload"
 
 PRODUCT = "xgc2-lichtblick"
-PRODUCT_VERSION = "1.25.0-1"
-DEB_VERSION = "1.25.0-1~noble"
+PRODUCT_VERSION = "1.25.0-2"
+DEB_VERSION = "1.25.0-2~noble"
 DIST = "noble"
 SOURCE_SHA = "1" * 40
 UPSTREAM_REPOSITORY = "https://github.com/lxk36/xgc2-lichtblick.git"
@@ -223,7 +223,7 @@ class ArtifactManifestTests(unittest.TestCase):
 
     def test_build_rejects_deb_version_outside_product_contract(self) -> None:
         artifact = self.work / "wrong-version"
-        self.build_deb(artifact, "amd64", version="1.25.0-2~noble")
+        self.build_deb(artifact, "amd64", version="1.25.0-3~noble")
         result = self.run_tool(
             "build",
             "--deb-dir",

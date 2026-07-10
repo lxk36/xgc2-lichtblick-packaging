@@ -32,7 +32,8 @@ usage:
     dpkg-query -W -f='${Status} ${Version}\n' xgc2-lichtblick
   notes: >-
     This package owns the Lichtblick executable and desktop integration. It
-    cannot be co-installed with the upstream lichtblick Debian package.
+    cannot be co-installed with the upstream lichtblick Debian package. Its
+    built-in Electron updater is disabled; install upgrades through APT.
 conflicts:
   apt_packages:
     - lichtblick
@@ -49,6 +50,7 @@ ownership:
     - /usr/share/icons/hicolor/128x128/apps/lichtblick.png
     - /usr/share/icons/hicolor/256x256/apps/lichtblick.png
     - /usr/share/icons/hicolor/512x512/apps/lichtblick.png
+    - /usr/share/icons/hicolor/1024x1024/apps/lichtblick.png
     - /usr/share/mime/packages/lichtblick.xml
 release:
   repository: lxk36/xgc2-lichtblick-packaging
