@@ -51,6 +51,19 @@ if [[ "$(node --version)" != "v${LICHTBLICK_NODE_VERSION}" ]]; then
   echo "Node.js v${LICHTBLICK_NODE_VERSION} is pinned; found $(node --version)." >&2
   exit 1
 fi
+if [[ "${USE_SYSTEM_FPM:-}" != true ]]; then
+  echo "USE_SYSTEM_FPM=true is required to prevent electron-builder from selecting an architecture-incompatible FPM bundle." >&2
+  exit 1
+fi
+if ! command -v fpm >/dev/null 2>&1; then
+  echo "The pinned FPM toolset is required on PATH." >&2
+  exit 1
+fi
+actual_fpm_version="$(fpm --version)"
+if [[ "${actual_fpm_version}" != "${LICHTBLICK_FPM_VERSION}" ]]; then
+  echo "FPM ${LICHTBLICK_FPM_VERSION} is pinned; found ${actual_fpm_version}." >&2
+  exit 1
+fi
 
 product_file="${repo_root}/.xgc2/product.yml"
 if [[ ! -f "${product_file}" ]]; then

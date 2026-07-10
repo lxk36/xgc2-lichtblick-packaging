@@ -51,6 +51,21 @@ source lichtblick.lock
 [[ "${LICHTBLICK_NODE_X64_SHA256}" =~ ^[0-9a-f]{64}$ ]]
 [[ "${LICHTBLICK_NODE_ARM64_SHA256}" =~ ^[0-9a-f]{64}$ ]]
 [[ "${LICHTBLICK_YARN_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+([+-][0-9A-Za-z.-]+)?$ ]]
+[[ "${LICHTBLICK_FPM_RELEASE}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+[[ "${LICHTBLICK_FPM_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+[[ "${LICHTBLICK_FPM_RUBY_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+[[ "${LICHTBLICK_FPM_AMD64_ARCHIVE}" == \
+  "fpm-${LICHTBLICK_FPM_VERSION}-ruby-${LICHTBLICK_FPM_RUBY_VERSION}-linux-amd64.7z" ]]
+[[ "${LICHTBLICK_FPM_ARM64_ARCHIVE}" == \
+  "fpm-${LICHTBLICK_FPM_VERSION}-ruby-${LICHTBLICK_FPM_RUBY_VERSION}-linux-arm64v8.7z" ]]
+[[ "${LICHTBLICK_FPM_AMD64_SHA256}" =~ ^[0-9a-f]{64}$ ]]
+[[ "${LICHTBLICK_FPM_ARM64_SHA256}" =~ ^[0-9a-f]{64}$ ]]
+[[ "${LICHTBLICK_FPM_RELEASE}" == 2.2.1 ]]
+[[ "${LICHTBLICK_FPM_VERSION}" == 1.17.0 ]]
+[[ "${LICHTBLICK_FPM_RUBY_VERSION}" == 3.4.3 ]]
+grep -Fq 'export USE_SYSTEM_FPM=true' .xgc2/scripts/build_deb_in_docker.sh
+grep -Fq 'fpm --version' .xgc2/scripts/build_deb_in_docker.sh
+grep -Fq 'bsdtar -xf' .xgc2/scripts/build_deb_in_docker.sh
 
 product_version="$(sed -n 's/^version:[[:space:]]*//p' .xgc2/product.yml | head -n 1)"
 case "${product_version}" in

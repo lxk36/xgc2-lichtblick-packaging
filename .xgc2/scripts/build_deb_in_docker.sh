@@ -124,10 +124,14 @@ docker run "${docker_run_args[@]}" \
       amd64)
         node_arch=x64
         node_sha256="${LICHTBLICK_NODE_X64_SHA256}"
+        fpm_archive="${LICHTBLICK_FPM_AMD64_ARCHIVE}"
+        fpm_sha256="${LICHTBLICK_FPM_AMD64_SHA256}"
         ;;
       arm64)
         node_arch=arm64
         node_sha256="${LICHTBLICK_NODE_ARM64_SHA256}"
+        fpm_archive="${LICHTBLICK_FPM_ARM64_ARCHIVE}"
+        fpm_sha256="${LICHTBLICK_FPM_ARM64_SHA256}"
         ;;
     esac
     node_archive="node-v${LICHTBLICK_NODE_VERSION}-linux-${node_arch}.tar.xz"
@@ -137,6 +141,39 @@ docker run "${docker_run_args[@]}" \
     printf "%s  %s\n" "${node_sha256}" "/tmp/${node_archive}" | sha256sum --check --strict
     tar -xJf "/tmp/${node_archive}" -C /usr/local --strip-components=1
     rm -f "/tmp/${node_archive}"
+
+    fpm_url="https://github.com/electron-userland/electron-builder-binaries/releases/download/fpm%40${LICHTBLICK_FPM_RELEASE}/${fpm_archive}"
+    curl --fail --location --retry 5 --retry-connrefused --retry-delay 2 \
+      --output "/tmp/${fpm_archive}" \
+      "${fpm_url}"
+    printf "%s  %s\n" "${fpm_sha256}" "/tmp/${fpm_archive}" \
+      | sha256sum --check --strict
+    install -d /opt/xgc2-fpm
+    bsdtar -xf "/tmp/${fpm_archive}" -C /opt/xgc2-fpm
+    rm -f "/tmp/${fpm_archive}"
+    test -x /opt/xgc2-fpm/fpm
+    test -x "/opt/xgc2-fpm/ruby-${LICHTBLICK_FPM_RUBY_VERSION}-portable/bin/ruby"
+    case "${TARGET_ARCH}" in
+      amd64)
+        file "/opt/xgc2-fpm/ruby-${LICHTBLICK_FPM_RUBY_VERSION}-portable/bin/ruby" \
+          | grep -Eq "x86-64|x86_64"
+        ;;
+      arm64)
+        file "/opt/xgc2-fpm/ruby-${LICHTBLICK_FPM_RUBY_VERSION}-portable/bin/ruby" \
+          | grep -Eq "aarch64|ARM aarch64"
+        ;;
+    esac
+    export PATH="/opt/xgc2-fpm:${PATH}"
+    export USE_SYSTEM_FPM=true
+    if [[ "$(command -v fpm)" != /opt/xgc2-fpm/fpm ]]; then
+      echo "Pinned FPM is not first on PATH." >&2
+      exit 1
+    fi
+    if [[ "$(fpm --version)" != "${LICHTBLICK_FPM_VERSION}" ]]; then
+      echo "Pinned FPM version mismatch." >&2
+      exit 1
+    fi
+
     corepack enable yarn
 
     if [[ "$(dpkg --print-architecture)" != "${TARGET_ARCH}" ]]; then
@@ -152,6 +189,14 @@ docker run "${docker_run_args[@]}" \
       echo "Expected exact package is missing: ${built_deb}" >&2
       exit 1
     fi
+
+    # Official Ubuntu container images discard /usr/share/doc by default.
+    # Re-include this package only so the installed-package smoke test checks
+    # the documentation that a normal Ubuntu installation receives.
+    printf "%s\n" \
+      "path-include=/usr/share/doc/xgc2-lichtblick/" \
+      "path-include=/usr/share/doc/xgc2-lichtblick/*" \
+      > /etc/dpkg/dpkg.cfg.d/zz-xgc2-lichtblick-smoke-docs
     apt-get install -y --no-install-recommends "${built_deb}"
     /workspace/packaging/.xgc2/scripts/smoke_test_installed.sh
     apt-get purge -y xgc2-lichtblick

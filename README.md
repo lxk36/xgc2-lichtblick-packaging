@@ -10,7 +10,7 @@ Ubuntu 20.04, 22.04, and 24.04 on amd64 and arm64.
 This repository owns:
 
 - `lichtblick.lock`, including the upstream repository, tag, commit SHA, and
-  exact Node/Yarn toolchain inputs;
+  exact Node, Yarn, and native FPM toolchain inputs;
 - the repeatable Debian build, deterministic repackaging, and installed-package
   smoke tests;
 - XGC2 package metadata and CI/release workflows;
@@ -49,10 +49,20 @@ cannot download and replace itself with an upstream `lichtblick` package.
 
 ## Local build
 
-A native amd64 or arm64 Docker host is required. The wrapper selects the pinned
-Node and Yarn toolchain inside the target Ubuntu image, builds Lichtblick, installs
-the resulting package, runs the smoke test, and checks package removal before it
-copies a deb to the output directory.
+A native amd64 or arm64 Docker host is required. The wrapper selects pinned
+Node, Yarn, and architecture-matched portable FPM toolchains inside the target
+Ubuntu image. FPM archives and checksums are locked in `lichtblick.lock`, so
+electron-builder never falls back to its legacy x86-only FPM download on arm64.
+The wrapper builds Lichtblick, installs the resulting package on the same native
+architecture, runs the smoke test, and checks package removal before it copies a
+deb to the output directory.
+
+Lichtblick v1.25.0 uses electron-builder 26. Its app-builder supports the
+`USE_SYSTEM_FPM=true` compatibility switch used here to select the pinned
+native bundle. This coupling is intentional: if an upstream upgrade moves to
+electron-builder 27, migrate the pin to electron-builder's `toolsets.fpm`
+mechanism and revalidate both architectures before changing or removing the
+compatibility switch.
 
 ```bash
 ./.xgc2/scripts/check_package_compliance.sh
