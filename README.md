@@ -86,8 +86,10 @@ sudo apt update
 sudo apt install xgc2-lichtblick
 ```
 
-The repository publishes distribution-specific versions such as
-`1.25.0-2~focal`, `1.25.0-2~jammy`, and `1.25.0-2~noble`.
+The repository publishes distribution-specific versions in the form
+`<product-version>~focal`, `<product-version>~jammy`, and
+`<product-version>~noble`. The authoritative product version and expanded APT
+versions are recorded in `.xgc2/product.yml`.
 
 ## CI and release
 
