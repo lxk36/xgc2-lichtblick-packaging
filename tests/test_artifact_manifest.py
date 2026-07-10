@@ -14,14 +14,38 @@ TOOL = ROOT / ".xgc2/scripts/xgc2_artifact_manifest.py"
 DEVOPS_ROOT = ROOT.parents[2]
 APT_VALIDATOR = DEVOPS_ROOT / "platforms/apt-repo/container/bin/xgc2-validate-release-upload"
 
-PRODUCT = "xgc2-lichtblick"
-PRODUCT_VERSION = "1.25.0-2"
-DEB_VERSION = "1.25.0-2~noble"
+
+def read_assignment_file(path: Path) -> dict[str, str]:
+    assignments: dict[str, str] = {}
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+            value = value[1:-1]
+        assignments[key.strip()] = value
+    return assignments
+
+
+def read_product_field(field: str) -> str:
+    prefix = f"{field}:"
+    for line in (ROOT / ".xgc2/product.yml").read_text(encoding="utf-8").splitlines():
+        if line.startswith(prefix):
+            return line[len(prefix) :].strip()
+    raise RuntimeError(f"missing top-level product field: {field}")
+
+
+LOCK = read_assignment_file(ROOT / "lichtblick.lock")
 DIST = "noble"
+PRODUCT = read_product_field("id")
+PRODUCT_VERSION = read_product_field("version")
+DEB_VERSION = f"{PRODUCT_VERSION}~{DIST}"
 SOURCE_SHA = "1" * 40
-UPSTREAM_REPOSITORY = "https://github.com/lxk36/xgc2-lichtblick.git"
-UPSTREAM_REF = "v1.25.0"
-UPSTREAM_SHA = "3fad978b6954a51d750b5b027c529a7c588e7ece"
+UPSTREAM_REPOSITORY = LOCK["LICHTBLICK_REPOSITORY"]
+UPSTREAM_REF = LOCK["LICHTBLICK_REF"]
+UPSTREAM_SHA = LOCK["LICHTBLICK_SHA"]
 LOCK_DIGEST = "2" * 64
 
 
@@ -223,7 +247,11 @@ class ArtifactManifestTests(unittest.TestCase):
 
     def test_build_rejects_deb_version_outside_product_contract(self) -> None:
         artifact = self.work / "wrong-version"
-        self.build_deb(artifact, "amd64", version="1.25.0-3~noble")
+        self.build_deb(
+            artifact,
+            "amd64",
+            version=f"{PRODUCT_VERSION}.mismatch~{DIST}",
+        )
         result = self.run_tool(
             "build",
             "--deb-dir",
