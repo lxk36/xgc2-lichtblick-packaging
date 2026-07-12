@@ -124,20 +124,21 @@ def debs_from_dir(deb_dir: Path, architecture: str) -> list[dict[str, Any]]:
 def validate_product_debs(
     entries: list[dict[str, Any]], *, product: str, version: str, distribution: str
 ) -> None:
-    """Enforce this repository's one-product/one-package Debian contract."""
+    """Enforce this repository's one-product/two-package Debian contract."""
 
-    if len(entries) != 1:
-        raise ValueError(f"expected exactly one deb for {product}, found {len(entries)}")
-    entry = entries[0]
-    if entry.get("package") != product:
+    expected_packages = {product, f"{product}-web"}
+    actual_packages = {str(entry.get("package")) for entry in entries}
+    if len(entries) != len(expected_packages) or actual_packages != expected_packages:
         raise ValueError(
-            f"deb package {entry.get('package')!r} does not match product {product!r}"
+            f"expected deb packages {sorted(expected_packages)!r} for {product}, "
+            f"found {sorted(actual_packages)!r}"
         )
     expected_version = f"{version}~{distribution}"
-    if entry.get("version") != expected_version:
-        raise ValueError(
-            f"deb version {entry.get('version')!r} does not match {expected_version!r}"
-        )
+    for entry in entries:
+        if entry.get("version") != expected_version:
+            raise ValueError(
+                f"deb version {entry.get('version')!r} does not match {expected_version!r}"
+            )
 
 
 def write_json(path: Path, payload: dict[str, Any]) -> None:

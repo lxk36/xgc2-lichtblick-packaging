@@ -93,6 +93,7 @@ docker run "${docker_run_args[@]}" \
   -e TARGET_ARCH="${architecture}" \
   -e LICHTBLICK_SOURCE_DIR=/workspace/work/source \
   -e LICHTBLICK_BUILD_WORK_DIR=/workspace/work/repack \
+  -e LICHTBLICK_WEB_BUILD_WORK_DIR=/workspace/work/web-repack \
   -e OUTPUT_DIR=/workspace/out \
   -v "${repo_root}:/workspace/packaging:ro" \
   -v "${work_dir}:/workspace/work" \
@@ -183,13 +184,17 @@ docker run "${docker_run_args[@]}" \
     fi
 
     /workspace/packaging/.xgc2/scripts/build_deb.sh
+    /workspace/packaging/.xgc2/scripts/build_web_deb.sh
 
     product_version="$(sed -n "s/^version:[[:space:]]*//p" /workspace/packaging/.xgc2/product.yml | head -n 1)"
-    built_deb="/workspace/out/xgc2-lichtblick_${product_version}~${PACKAGE_DISTRIBUTION}_${TARGET_ARCH}.deb"
-    if [[ ! -f "${built_deb}" ]]; then
-      echo "Expected exact package is missing: ${built_deb}" >&2
-      exit 1
-    fi
+    desktop_deb="/workspace/out/xgc2-lichtblick_${product_version}~${PACKAGE_DISTRIBUTION}_${TARGET_ARCH}.deb"
+    web_deb="/workspace/out/xgc2-lichtblick-web_${product_version}~${PACKAGE_DISTRIBUTION}_${TARGET_ARCH}.deb"
+    for built_deb in "${desktop_deb}" "${web_deb}"; do
+      if [[ ! -f "${built_deb}" ]]; then
+        echo "Expected exact package is missing: ${built_deb}" >&2
+        exit 1
+      fi
+    done
 
     # Official Ubuntu container images discard /usr/share/doc by default.
     # Re-include this package only so the installed-package smoke test checks
@@ -197,17 +202,24 @@ docker run "${docker_run_args[@]}" \
     printf "%s\n" \
       "path-include=/usr/share/doc/xgc2-lichtblick/" \
       "path-include=/usr/share/doc/xgc2-lichtblick/*" \
+      "path-include=/usr/share/doc/xgc2-lichtblick-web/" \
+      "path-include=/usr/share/doc/xgc2-lichtblick-web/*" \
       > /etc/dpkg/dpkg.cfg.d/zz-xgc2-lichtblick-smoke-docs
-    apt-get install -y --no-install-recommends "${built_deb}"
+    apt-get install -y --no-install-recommends "${desktop_deb}" "${web_deb}"
     /workspace/packaging/.xgc2/scripts/smoke_test_installed.sh
-    apt-get purge -y xgc2-lichtblick
-    if dpkg-query -W -f="\${db:Status-Abbrev}" xgc2-lichtblick 2>/dev/null | grep -q "^ii"; then
-      echo "xgc2-lichtblick is still installed after purge." >&2
-      exit 1
-    fi
+    /workspace/packaging/.xgc2/scripts/smoke_test_web_installed.sh
+    apt-get purge -y xgc2-lichtblick xgc2-lichtblick-web
+    for package in xgc2-lichtblick xgc2-lichtblick-web; do
+      if dpkg-query -W -f="\${db:Status-Abbrev}" "${package}" 2>/dev/null | grep -q "^ii"; then
+        echo "${package} is still installed after purge." >&2
+        exit 1
+      fi
+    done
     test ! -e /usr/bin/lichtblick
     test ! -L /usr/bin/lichtblick
     test ! -e /opt/Lichtblick
+    test ! -e /usr/bin/xgc2-lichtblick-web
+    test ! -e /usr/lib/xgc2/lichtblick-web
   '
 
 echo "Validated Debian artifact(s):"
