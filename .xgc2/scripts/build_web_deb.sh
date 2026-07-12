@@ -16,7 +16,9 @@ output_dir="${OUTPUT_DIR:-${repo_root}/debs}"
 maintainer="XGC2 Packaging <lxk36@users.noreply.github.com>"
 
 case "${package_distribution}" in
-  focal|jammy|noble) ;;
+  focal) bridge_package="ros-noetic-foxglove-bridge" ;;
+  jammy) bridge_package="ros-humble-foxglove-bridge" ;;
+  noble) bridge_package="ros-jazzy-foxglove-bridge" ;;
   *) echo "PACKAGE_DISTRIBUTION must be one of: focal, jammy, noble" >&2; exit 2 ;;
 esac
 case "${target_arch}" in
@@ -128,7 +130,7 @@ Priority: optional
 Architecture: ${target_arch}
 Maintainer: ${maintainer}
 Depends: ca-certificates, libc6, libgcc-s1, libstdc++6
-Recommends: ros-noetic-foxglove-bridge
+Recommends: ${bridge_package}
 Description: XGC2 Lichtblick browser-based robotics visualization
  Serves the pinned Lichtblick web application from a command-line HTTP server,
  auto-connects through a same-origin WebSocket proxy, and opens with a 3D layout.

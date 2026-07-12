@@ -93,12 +93,19 @@ sudo apt install xgc2-lichtblick-web
 xgc2-lichtblick-web
 ```
 
-The Web package recommends `ros-noetic-foxglove-bridge`. On Ubuntu 20.04
-systems with the standard ROS Noetic APT source configured, a normal
-`apt install` installs the bridge automatically. It remains a recommendation
-rather than a hard dependency because ROS Noetic is not published for the
-jammy and noble package targets; using a hard dependency would make those
-WebUI packages uninstallable.
+The Web package recommends the Foxglove bridge matching each supported Ubuntu
+and ROS release:
+
+| Ubuntu | ROS | Recommended bridge |
+| --- | --- | --- |
+| 20.04 (focal) | Noetic | `ros-noetic-foxglove-bridge` |
+| 22.04 (jammy) | Humble | `ros-humble-foxglove-bridge` |
+| 24.04 (noble) | Jazzy | `ros-jazzy-foxglove-bridge` |
+
+With the matching official ROS APT source configured, a normal `apt install`
+installs the bridge automatically. It remains a recommendation so the WebUI
+can still be installed before a ROS repository is configured or on a machine
+that only consumes a bridge running on another execution target.
 
 The command prints its URL, listens on `127.0.0.1:8080` by default, opens with a
 3D visualization layout, and automatically connects the browser through its

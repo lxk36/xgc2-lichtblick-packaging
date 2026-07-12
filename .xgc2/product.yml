@@ -37,10 +37,11 @@ usage:
 
     curl --fail http://127.0.0.1:8080/healthz'
   notes: xgc2-lichtblick-web is the default browser-based package and never opens
-    a desktop window. It recommends ros-noetic-foxglove-bridge so standard focal
-    installs add the live-data bridge automatically without making jammy/noble
-    uninstallable. The optional xgc2-lichtblick package retains Electron desktop
-    integration and disables its built-in updater; install upgrades through APT.
+    a desktop window. It recommends the release-matched Foxglove bridge (Noetic
+    on focal, Humble on jammy, and Jazzy on noble) so standard installs add the
+    live-data bridge automatically. The optional xgc2-lichtblick package retains
+    Electron desktop integration and disables its built-in updater; install
+    upgrades through APT.
 conflicts:
   apt_packages:
   - lichtblick

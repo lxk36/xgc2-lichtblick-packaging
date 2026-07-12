@@ -192,7 +192,12 @@ validate_deb() {
     [[ ",${value// /}," == *",${dependency},"* ]]
   done
   value="$(dpkg-deb -f "${deb}" Recommends)"
-  [[ ",${value// /}," == *",ros-noetic-foxglove-bridge,"* ]]
+  case "${distribution}" in
+    focal) expected_bridge="ros-noetic-foxglove-bridge" ;;
+    jammy) expected_bridge="ros-humble-foxglove-bridge" ;;
+    noble) expected_bridge="ros-jazzy-foxglove-bridge" ;;
+  esac
+  [[ ",${value// /}," == *",${expected_bridge},"* ]]
   control_dir="$(mktemp -d)"
   contents_file="${control_dir}/contents"
   dpkg-deb --control "${deb}" "${control_dir}"
