@@ -64,6 +64,45 @@ install -m 0644 "${repo_root}/launcher/xgc2-lichtblick-web.js" \
   "${pkg_root}/usr/lib/xgc2/lichtblick-web/xgc2-lichtblick-web.js"
 install -m 0644 "${repo_root}/launcher/default-layout.json" \
   "${pkg_root}/usr/lib/xgc2/lichtblick-web/default-layout.json"
+python3 - \
+  "${pkg_root}/usr/lib/xgc2/lichtblick-web/build-info.json" \
+  "${package_version}" \
+  "${product_version}" \
+  "${package_distribution}" \
+  "${target_arch}" \
+  "${LICHTBLICK_VERSION}" \
+  "${LICHTBLICK_REF}" \
+  "${LICHTBLICK_SHA}" <<'PY'
+import json
+import pathlib
+import sys
+
+(
+    output,
+    package_version,
+    product_version,
+    distribution,
+    architecture,
+    upstream_version,
+    upstream_ref,
+    upstream_sha,
+) = sys.argv[1:]
+payload = {
+    "schema": "xgc2.lichtblick-web.build.v1",
+    "package": "xgc2-lichtblick-web",
+    "version": package_version,
+    "productVersion": product_version,
+    "distribution": distribution,
+    "architecture": architecture,
+    "upstreamVersion": upstream_version,
+    "upstreamRef": upstream_ref,
+    "upstreamSha": upstream_sha,
+}
+pathlib.Path(output).write_text(
+    json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n",
+    encoding="utf-8",
+)
+PY
 install -m 0644 "${repo_root}/launcher/lichtblick-web.env" \
   "${pkg_root}/etc/xgc2/lichtblick-web.env"
 install -m 0644 "${repo_root}/README.md" \
@@ -79,6 +118,8 @@ if [[ -f /usr/local/LICENSE ]]; then
     "${pkg_root}/usr/share/doc/${package_name}/LICENSE.node"
 fi
 
+printf '%s\n' '/etc/xgc2/lichtblick-web.env' > "${pkg_root}/DEBIAN/conffiles"
+
 cat > "${pkg_root}/DEBIAN/control" <<EOF
 Package: ${package_name}
 Version: ${package_version}
@@ -87,6 +128,7 @@ Priority: optional
 Architecture: ${target_arch}
 Maintainer: ${maintainer}
 Depends: ca-certificates, libc6, libgcc-s1, libstdc++6
+Recommends: ros-noetic-foxglove-bridge
 Description: XGC2 Lichtblick browser-based robotics visualization
  Serves the pinned Lichtblick web application from a command-line HTTP server,
  auto-connects through a same-origin WebSocket proxy, and opens with a 3D layout.
@@ -98,7 +140,10 @@ find "${pkg_root}" -exec touch -h -d "@${source_date_epoch}" {} +
   find . -path ./DEBIAN -prune -o -type f -print0 \
     | sort -z | xargs -0 md5sum | sed 's#  \./#  #' > DEBIAN/md5sums
 )
-chmod 0644 "${pkg_root}/DEBIAN/control" "${pkg_root}/DEBIAN/md5sums"
+chmod 0644 \
+  "${pkg_root}/DEBIAN/conffiles" \
+  "${pkg_root}/DEBIAN/control" \
+  "${pkg_root}/DEBIAN/md5sums"
 
 output_deb="${output_dir}/${package_name}_${package_version}_${target_arch}.deb"
 mkdir -p "${output_dir}"

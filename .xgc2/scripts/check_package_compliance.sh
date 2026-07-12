@@ -191,14 +191,23 @@ validate_deb() {
   for dependency in ca-certificates libc6 libgcc-s1 libstdc++6; do
     [[ ",${value// /}," == *",${dependency},"* ]]
   done
+  value="$(dpkg-deb -f "${deb}" Recommends)"
+  [[ ",${value// /}," == *",ros-noetic-foxglove-bridge,"* ]]
   control_dir="$(mktemp -d)"
   contents_file="${control_dir}/contents"
+  dpkg-deb --control "${deb}" "${control_dir}"
   dpkg-deb --contents "${deb}" > "${contents_file}"
   grep -Fq './usr/bin/xgc2-lichtblick-web' "${contents_file}"
   grep -Fq './usr/lib/xgc2/lichtblick-web/node/bin/node' "${contents_file}"
   grep -Fq './usr/lib/xgc2/lichtblick-web/web/index.html' "${contents_file}"
   grep -Fq './usr/lib/xgc2/lichtblick-web/default-layout.json' "${contents_file}"
+  grep -Fq './usr/lib/xgc2/lichtblick-web/build-info.json' "${contents_file}"
   grep -Fq './etc/xgc2/lichtblick-web.env' "${contents_file}"
+  [[ "$(cat "${control_dir}/conffiles")" == '/etc/xgc2/lichtblick-web.env' ]]
+  if grep -Eq '\./(usr/)?lib/systemd/' "${contents_file}"; then
+    echo "The web package must be managed by XGC Process Supervisor, not systemd." >&2
+    exit 1
+  fi
   rm -rf "${control_dir}"
 }
 

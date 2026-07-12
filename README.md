@@ -93,6 +93,13 @@ sudo apt install xgc2-lichtblick-web
 xgc2-lichtblick-web
 ```
 
+The Web package recommends `ros-noetic-foxglove-bridge`. On Ubuntu 20.04
+systems with the standard ROS Noetic APT source configured, a normal
+`apt install` installs the bridge automatically. It remains a recommendation
+rather than a hard dependency because ROS Noetic is not published for the
+jammy and noble package targets; using a hard dependency would make those
+WebUI packages uninstallable.
+
 The command prints its URL, listens on `127.0.0.1:8080` by default, opens with a
 3D visualization layout, and automatically connects the browser through its
 same-origin WebSocket endpoint to `ws://127.0.0.1:8765`:
@@ -101,18 +108,50 @@ same-origin WebSocket endpoint to `ws://127.0.0.1:8765`:
 http://127.0.0.1:8080/
 ```
 
+The launcher exposes lightweight runtime metadata for XGC Process Supervisor
+discovery and diagnostics. The response is generated from immutable metadata
+written into the Debian package at build time, rather than from a launcher
+constant:
+
+```bash
+curl --fail http://127.0.0.1:8080/version
+curl --fail http://127.0.0.1:8080/healthz
+```
+
 Override the listener or data source without changing files:
 
 ```bash
 xgc2-lichtblick-web \
   --host 0.0.0.0 \
   --port 8080 \
-  --control-plane-url ws://127.0.0.1:8765
+  --control-plane-url ws://127.0.0.1:8765 \
+  --allowed-origin https://xgc.example.com \
+  --frame-ancestors "'self' https://xgc.example.com"
 ```
 
 To embed it in another WebUI, place the server behind the same reverse proxy and
 use an iframe. Examples are installed in the package documentation and kept in
 `launcher/reverse-proxy-examples.md` in this repository.
+
+WebSocket upgrades are protected by an exact browser Origin allowlist. The
+launcher always permits its own `http://127.0.0.1:PORT` and
+`http://localhost:PORT` origins. Additional XGC parent origins are configured
+with repeated `--allowed-origin` flags or the comma-separated
+`ALLOWED_ORIGINS` setting. Origins must be complete `http://` or `https://`
+origins without paths, queries, credentials, or wildcards.
+
+HTML responses set a CSP `frame-ancestors` directive without setting the legacy
+`X-Frame-Options` header. The default permits same-origin production embedding
+and the standard XGC Vite origins. Set `FRAME_ANCESTORS` (or
+`--frame-ancestors`) to the exact deployed XGC origin when the parent is on a
+different origin. Keep it aligned with `ALLOWED_ORIGINS`.
+APT treats `/etc/xgc2/lichtblick-web.env` as a Debian conffile, so locally
+configured origins and listener settings are preserved across package upgrades.
+
+The Debian package intentionally installs no systemd unit and starts no daemon.
+XGC deployments register `/usr/bin/xgc2-lichtblick-web` as a Process Supervisor
+definition, so experiment orchestration owns start, stop, readiness, logs, and
+recovery. Standalone users may still launch the command directly.
 
 Install the retained Electron application only when a desktop window is wanted:
 
