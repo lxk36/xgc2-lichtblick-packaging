@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+exec /usr/lib/xgc2/lichtblick-web/node/bin/node \
+  /usr/lib/xgc2/lichtblick-web/xgc2-lichtblick-web.js "$@"

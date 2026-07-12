@@ -1,19 +1,24 @@
 schema: xgc2.product.v1
 id: xgc2-lichtblick
-name: XGC2 Lichtblick Desktop
-version: 1.25.0-4
-kind: desktop-apt
-summary: Pinned, tested Lichtblick desktop packages for XGC2 Ubuntu workstations.
+name: XGC2 Lichtblick Web and Desktop
+version: 1.25.0-5
+kind: mixed
+summary: Pinned Lichtblick browser server with an optional Electron desktop package.
 groups:
 - webui
 - desktop
 apt:
   distribution: focal,jammy,noble
   install:
-  - xgc2-lichtblick
+  - xgc2-lichtblick-web
   packages:
+  - xgc2-lichtblick-web
   - xgc2-lichtblick
   depends:
+  - ca-certificates
+  - libc6
+  - libgcc-s1
+  - libstdc++6
   - libasound2
   - libgtk-3-0
   - libnotify4
@@ -27,16 +32,22 @@ apt:
 usage:
   install: 'sudo apt update
 
-    sudo apt install xgc2-lichtblick'
-  smoke_test: dpkg-query -W -f='${Status} ${Version}\n' xgc2-lichtblick
-  notes: This package owns the Lichtblick executable and desktop integration. It cannot
-    be co-installed with the upstream lichtblick Debian package. Its built-in Electron
-    updater is disabled; install upgrades through APT.
+    sudo apt install xgc2-lichtblick-web'
+  smoke_test: 'xgc2-lichtblick-web --help
+
+    curl --fail http://127.0.0.1:8080/healthz'
+  notes: xgc2-lichtblick-web is the default browser-based package and never opens
+    a desktop window. The optional xgc2-lichtblick package retains Electron desktop
+    integration and disables its built-in updater; install upgrades through APT.
 conflicts:
   apt_packages:
   - lichtblick
 ownership:
   paths:
+  - /usr/bin/xgc2-lichtblick-web
+  - /usr/lib/xgc2/lichtblick-web
+  - /etc/xgc2/lichtblick-web.env
+  - /usr/share/doc/xgc2-lichtblick-web
   - /opt/Lichtblick
   - /usr/bin/lichtblick
   - /usr/share/applications/lichtblick.desktop
@@ -56,6 +67,6 @@ release:
   workflow: release.yml
   ci_workflow: ci.yml
   apt_versions:
-    focal: 1.25.0-4~focal
-    jammy: 1.25.0-4~jammy
-    noble: 1.25.0-4~noble
+    focal: 1.25.0-5~focal
+    jammy: 1.25.0-5~jammy
+    noble: 1.25.0-5~noble

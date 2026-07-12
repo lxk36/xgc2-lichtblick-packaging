@@ -22,12 +22,20 @@ required_files=(
   .xgc2/scripts/fetch_lichtblick.sh
   .xgc2/scripts/build_deb.sh
   .xgc2/scripts/build_deb_in_docker.sh
+  .xgc2/scripts/build_web_deb.sh
   .xgc2/scripts/check_package_compliance.sh
   .xgc2/scripts/smoke_test_installed.sh
+  .xgc2/scripts/smoke_test_web_installed.sh
   .xgc2/scripts/xgc2_artifact_manifest.py
   .github/workflows/ci.yml
   .github/workflows/release.yml
   tests/test_artifact_manifest.py
+  tests/test_lichtblick_web.js
+  launcher/default-layout.json
+  launcher/lichtblick-web.env
+  launcher/reverse-proxy-examples.md
+  launcher/xgc2-lichtblick-web
+  launcher/xgc2-lichtblick-web.js
 )
 for file in "${required_files[@]}"; do
   [[ -f "${file}" ]] || { echo "Missing required file: ${file}" >&2; exit 1; }
@@ -137,49 +145,66 @@ validate_deb() {
   version="$(dpkg-deb -f "${deb}" Version)"
   architecture="$(dpkg-deb -f "${deb}" Architecture)"
   maintainer="$(dpkg-deb -f "${deb}" Maintainer)"
-  [[ "${package}" == xgc2-lichtblick ]]
+  [[ "${package}" == xgc2-lichtblick || "${package}" == xgc2-lichtblick-web ]]
   [[ "${architecture}" == amd64 || "${architecture}" == arm64 ]]
   [[ "${maintainer}" == 'XGC2 Packaging <lxk36@users.noreply.github.com>' ]]
   distribution="${version##*~}"
   [[ "${distribution}" == focal || "${distribution}" == jammy || "${distribution}" == noble ]]
   [[ "${version}" == "${product_version}~${distribution}" ]]
-  for relation in Provides Conflicts Replaces; do
-    value="$(dpkg-deb -f "${deb}" "${relation}")"
-    [[ ",${value// /}," == *",lichtblick,"* ]]
-  done
-  value="$(dpkg-deb -f "${deb}" Depends)"
-  [[ ",${value// /}," == *",libasound2(>=1.0.16),"* ]]
-  for dependency in libgtk-3-0 libnotify4 libnss3 libxtst6 xdg-utils libatspi2.0-0 libdrm2 libgbm1 libxcb-dri3-0; do
+  if [[ "${package}" == xgc2-lichtblick ]]; then
+    for relation in Provides Conflicts Replaces; do
+      value="$(dpkg-deb -f "${deb}" "${relation}")"
+      [[ ",${value// /}," == *",lichtblick,"* ]]
+    done
     value="$(dpkg-deb -f "${deb}" Depends)"
+    [[ ",${value// /}," == *",libasound2(>=1.0.16),"* ]]
+    for dependency in libgtk-3-0 libnotify4 libnss3 libxtst6 xdg-utils libatspi2.0-0 libdrm2 libgbm1 libxcb-dri3-0; do
+      value="$(dpkg-deb -f "${deb}" Depends)"
+      [[ ",${value// /}," == *",${dependency},"* ]]
+    done
+    control_dir="$(mktemp -d)"
+    dpkg-deb --control "${deb}" "${control_dir}"
+    [[ -x "${control_dir}/postinst" && -x "${control_dir}/postrm" ]]
+    grep -Fq "/opt/Lichtblick/lichtblick" "${control_dir}/postinst"
+    grep -Fq "/usr/bin/lichtblick" "${control_dir}/postinst"
+    grep -Fq 'rm -f /usr/bin/lichtblick' "${control_dir}/postrm"
+    contents_file="${control_dir}/contents"
+    dpkg-deb --contents "${deb}" > "${contents_file}"
+    grep -Fq './opt/Lichtblick/LICENSE.electron.txt' "${contents_file}"
+    grep -Fq './opt/Lichtblick/LICENSES.chromium.html' "${contents_file}"
+    if grep -Eq '\./opt/Lichtblick/resources/(package-type|app-update\.yml)$' "${contents_file}"; then
+      echo "Electron self-update metadata remains in ${deb}." >&2
+      exit 1
+    fi
+    for doc_file in README.md lichtblick.lock LICENSE.upstream copyright; do
+      grep -Fq "./usr/share/doc/xgc2-lichtblick/${doc_file}" "${contents_file}"
+    done
+    if grep -Fq './usr/share/doc/lichtblick/' "${contents_file}"; then
+      echo "Legacy upstream documentation directory remains in ${deb}." >&2
+      exit 1
+    fi
+    rm -rf "${control_dir}"
+    return
+  fi
+
+  value="$(dpkg-deb -f "${deb}" Depends)"
+  for dependency in ca-certificates libc6 libgcc-s1 libstdc++6; do
     [[ ",${value// /}," == *",${dependency},"* ]]
   done
   control_dir="$(mktemp -d)"
-  dpkg-deb --control "${deb}" "${control_dir}"
-  [[ -x "${control_dir}/postinst" && -x "${control_dir}/postrm" ]]
-  grep -Fq "/opt/Lichtblick/lichtblick" "${control_dir}/postinst"
-  grep -Fq "/usr/bin/lichtblick" "${control_dir}/postinst"
-  grep -Fq 'rm -f /usr/bin/lichtblick' "${control_dir}/postrm"
   contents_file="${control_dir}/contents"
   dpkg-deb --contents "${deb}" > "${contents_file}"
-  grep -Fq './opt/Lichtblick/LICENSE.electron.txt' "${contents_file}"
-  grep -Fq './opt/Lichtblick/LICENSES.chromium.html' "${contents_file}"
-  if grep -Eq '\./opt/Lichtblick/resources/(package-type|app-update\.yml)$' "${contents_file}"; then
-    echo "Electron self-update metadata remains in ${deb}." >&2
-    exit 1
-  fi
-  for doc_file in README.md lichtblick.lock LICENSE.upstream copyright; do
-    grep -Fq "./usr/share/doc/xgc2-lichtblick/${doc_file}" "${contents_file}"
-  done
-  if grep -Fq './usr/share/doc/lichtblick/' "${contents_file}"; then
-    echo "Legacy upstream documentation directory remains in ${deb}." >&2
-    exit 1
-  fi
+  grep -Fq './usr/bin/xgc2-lichtblick-web' "${contents_file}"
+  grep -Fq './usr/lib/xgc2/lichtblick-web/node/bin/node' "${contents_file}"
+  grep -Fq './usr/lib/xgc2/lichtblick-web/web/index.html' "${contents_file}"
+  grep -Fq './usr/lib/xgc2/lichtblick-web/default-layout.json' "${contents_file}"
+  grep -Fq './etc/xgc2/lichtblick-web.env' "${contents_file}"
   rm -rf "${control_dir}"
 }
 
 if [[ -n "${deb_dir}" ]]; then
   mapfile -t debs < <(find "${deb_dir}" -maxdepth 1 -type f -name '*.deb' -print | sort)
-  (( ${#debs[@]} > 0 )) || { echo "No Debs found in ${deb_dir}." >&2; exit 1; }
+  (( ${#debs[@]} == 2 )) || { echo "Expected desktop and web Debs in ${deb_dir}." >&2; exit 1; }
   for deb in "${debs[@]}"; do
     validate_deb "${deb}"
   done
@@ -187,4 +212,5 @@ fi
 
 git diff --check
 python3 -m unittest discover -s tests -v
+node --test tests/test_lichtblick_web.js
 echo "xgc2-lichtblick package compliance checks passed."

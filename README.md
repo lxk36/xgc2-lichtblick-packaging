@@ -1,9 +1,10 @@
 # xgc2-lichtblick-packaging
 
-Product packaging for the XGC2-supported Lichtblick desktop application. This
-repository fetches an immutable Lichtblick source revision, builds native Debian
-packages, tests the installed application, and publishes signed APT releases for
-Ubuntu 20.04, 22.04, and 24.04 on amd64 and arm64.
+Product packaging for the XGC2-supported Lichtblick browser server and optional
+Electron desktop application. This repository fetches an immutable Lichtblick
+source revision, builds both Debian packages, tests their installed entrypoints,
+and publishes signed APT releases for Ubuntu 20.04, 22.04, and 24.04 on amd64
+and arm64.
 
 ## Repository boundary
 
@@ -11,8 +12,8 @@ This repository owns:
 
 - `lichtblick.lock`, including the upstream repository, tag, commit SHA, and
   exact Node, Yarn, and native FPM toolchain inputs;
-- the repeatable Debian build, deterministic repackaging, and installed-package
-  smoke tests;
+- the repeatable Web and Electron Debian builds, deterministic repackaging, and
+  installed-package smoke tests;
 - XGC2 package metadata and CI/release workflows;
 - promotion of validated packages to the XGC2 APT repository.
 
@@ -35,13 +36,18 @@ that the same tag has the same SHA in the canonical Lichtblick repository.
 | 22.04 | jammy | yes | yes |
 | 24.04 | noble | yes | yes |
 
-The Debian package is named `xgc2-lichtblick`. Its Debian revision comes from
+The default Debian package is `xgc2-lichtblick-web`. It contains the production
+Web bundle, a pinned architecture-matched Node runtime, a command-line HTTP and
+WebSocket proxy, and a single-3D-panel initial layout. It does not open a window
+or register an automatic service. The optional `xgc2-lichtblick` package retains
+the Electron desktop application. Its Debian revision comes from
 `.xgc2/product.yml`, which lets the parent release orchestrator bump packaging
-revisions without changing the immutable source lock. It conflicts with and
-replaces the upstream `lichtblick` package so both applications cannot overwrite
-the same desktop files and executable. The installed package also carries the
-source lock, packaging README, upstream license, and original changelog under
-`/usr/share/doc/xgc2-lichtblick/`.
+revisions without changing the immutable source lock.
+
+The Electron package conflicts with and replaces the upstream `lichtblick`
+package so both applications cannot overwrite the same desktop files and
+executable. Its upstream self-updater remains disabled; upgrades are delivered
+through APT.
 
 The upstream Electron self-updater is disabled during Debian repackaging. XGC2
 workstations must receive Lichtblick upgrades through `apt`; the application
@@ -79,11 +85,40 @@ build state stay under the selected work directory and are not committed.
 
 ## Install from XGC2 APT
 
-After the XGC2 signed APT source has been configured on the machine:
+After the XGC2 signed APT source has been configured, install the browser server:
 
 ```bash
 sudo apt update
+sudo apt install xgc2-lichtblick-web
+xgc2-lichtblick-web
+```
+
+The command prints its URL, listens on `127.0.0.1:8080` by default, opens with a
+3D visualization layout, and automatically connects the browser through its
+same-origin WebSocket endpoint to `ws://127.0.0.1:8765`:
+
+```text
+http://127.0.0.1:8080/
+```
+
+Override the listener or data source without changing files:
+
+```bash
+xgc2-lichtblick-web \
+  --host 0.0.0.0 \
+  --port 8080 \
+  --control-plane-url ws://127.0.0.1:8765
+```
+
+To embed it in another WebUI, place the server behind the same reverse proxy and
+use an iframe. Examples are installed in the package documentation and kept in
+`launcher/reverse-proxy-examples.md` in this repository.
+
+Install the retained Electron application only when a desktop window is wanted:
+
+```bash
 sudo apt install xgc2-lichtblick
+lichtblick
 ```
 
 The repository publishes distribution-specific versions in the form
@@ -94,7 +129,7 @@ versions are recorded in `.xgc2/product.yml`.
 ## CI and release
 
 `ci.yml` runs compliance plus six native build/install/smoke jobs on pushes and
-pull requests. Each build uploads the deb and an `xgc2.build-artifact.v1`
+pull requests. Each build uploads both debs and an `xgc2.build-artifact.v1`
 manifest for 14 days. CI never writes to APT.
 
 `release.yml` is manual and is normally dispatched by the XGC2 release
