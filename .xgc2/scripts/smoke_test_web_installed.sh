@@ -9,6 +9,7 @@ launcher="/usr/bin/xgc2-lichtblick-web"
 [[ -x /usr/lib/xgc2/lichtblick-web/node/bin/node ]]
 [[ -f /usr/lib/xgc2/lichtblick-web/web/index.html ]]
 [[ -f /usr/lib/xgc2/lichtblick-web/default-layout.json ]]
+[[ -f /usr/lib/xgc2/lichtblick-web/build-info.json ]]
 [[ -f /etc/xgc2/lichtblick-web.env ]]
 
 smoke_dir="$(mktemp -d)"
@@ -39,10 +40,22 @@ done
 
 curl --fail --silent --show-error "http://127.0.0.1:${port}/healthz" \
   | grep -Fq '"status":"ok"'
+curl --fail --silent --show-error "http://127.0.0.1:${port}/version" \
+  > "${smoke_dir}/version.json"
+grep -Fq '"schema":"xgc2.lichtblick-web.build.v1"' "${smoke_dir}/version.json"
+grep -Fq '"package":"xgc2-lichtblick-web"' "${smoke_dir}/version.json"
+grep -Fq '"version":' "${smoke_dir}/version.json"
 curl --fail --silent --show-error "http://127.0.0.1:${port}/" \
   > "${smoke_dir}/index.html"
 grep -Fq '"layout":"3D!xgc2"' "${smoke_dir}/index.html"
 grep -Fq 'foxglove-websocket' "${smoke_dir}/index.html"
 grep -Fq '/ws' "${smoke_dir}/index.html"
+curl --fail --silent --show-error --dump-header "${smoke_dir}/headers" \
+  --output /dev/null "http://127.0.0.1:${port}/"
+grep -Fiq "content-security-policy: frame-ancestors 'self'" "${smoke_dir}/headers"
+if grep -Fiq 'x-frame-options:' "${smoke_dir}/headers"; then
+  echo "X-Frame-Options must not block the supported iframe integration." >&2
+  exit 1
+fi
 
 echo "xgc2-lichtblick-web installed HTTP smoke test passed on port ${port}."

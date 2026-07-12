@@ -28,8 +28,10 @@ const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_PORT = 8080;
 const DEFAULT_CONTROL_PLANE_URL = "ws://127.0.0.1:8765";
 const DEFAULT_PUBLIC_URL_PREFIX = "/";
+const DEFAULT_FRAME_ANCESTORS = "'self' http://127.0.0.1:5173 http://localhost:5173";
 const ENV_FILE = process.env.XGC2_LICHTBLICK_WEB_ENV_FILE ?? "/etc/xgc2/lichtblick-web.env";
 const DEFAULT_STATIC_ROOT = "/usr/lib/xgc2/lichtblick-web/web";
+const DEFAULT_BUILD_INFO_FILE = "/usr/lib/xgc2/lichtblick-web/build-info.json";
 const DEFAULT_LAYOUT_FILE =
   process.env.XGC2_LICHTBLICK_WEB_DEFAULT_LAYOUT ??
   "/usr/lib/xgc2/lichtblick-web/default-layout.json";
@@ -37,6 +39,8 @@ const DEFAULT_LAYOUT_FILE =
 // overridden by the XGC2_LICHTBLICK_WEB_STATIC_ROOT environment variable
 // for development/testing without changing the package.
 const STATIC_ROOT = process.env.XGC2_LICHTBLICK_WEB_STATIC_ROOT ?? DEFAULT_STATIC_ROOT;
+const BUILD_INFO_FILE =
+  process.env.XGC2_LICHTBLICK_WEB_BUILD_INFO ?? DEFAULT_BUILD_INFO_FILE;
 const LOG_PREFIX = "xgc2-lichtblick-web";
 
 function logLine(level, message) {
@@ -56,6 +60,8 @@ function parseArgs(argv) {
     port: null,
     controlPlaneUrl: null,
     publicUrlPrefix: null,
+    allowedOrigins: [],
+    frameAncestors: null,
     showHelp: false,
   };
 
@@ -80,6 +86,12 @@ function parseArgs(argv) {
         break;
       case "--public-url-prefix":
         opts.publicUrlPrefix = argv[++i];
+        break;
+      case "--allowed-origin":
+        opts.allowedOrigins.push(argv[++i]);
+        break;
+      case "--frame-ancestors":
+        opts.frameAncestors = argv[++i];
         break;
       default:
         if (arg.startsWith("--")) {
@@ -109,6 +121,11 @@ function printHelp() {
       "  --public-url-prefix <path>     URL prefix the bundle is served under.",
       "                                   Env: PUBLIC_URL_PREFIX.",
       `                                   Default: ${DEFAULT_PUBLIC_URL_PREFIX}`,
+      "  --allowed-origin <origin>      Additional WebSocket browser origin.",
+      "                                   May be repeated. Env: ALLOWED_ORIGINS (CSV).",
+      "  --frame-ancestors <sources>    CSP frame-ancestors source list.",
+      "                                   Env: FRAME_ANCESTORS.",
+      `                                   Default: ${DEFAULT_FRAME_ANCESTORS}`,
       "  -h, --help                     Show this help and exit.",
       "",
       "Environment variables override compiled-in defaults but are themselves",
@@ -175,6 +192,71 @@ function parseWsUrl(rawUrl) {
         : 80,
     path: `${parsed.pathname || "/"}${parsed.search || ""}`,
   };
+}
+
+function normalizeOrigin(rawOrigin) {
+  const value = String(rawOrigin ?? "").trim();
+  if (value === "") throw new Error("origin must not be empty");
+  const parsed = new url.URL(value);
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error(`origin must use http:// or https://, got ${parsed.protocol}`);
+  }
+  if (parsed.hostname.includes("*")) {
+    throw new Error(`origin must not contain a wildcard hostname: ${value}`);
+  }
+  if (
+    parsed.username !== "" ||
+    parsed.password !== "" ||
+    parsed.pathname !== "/" ||
+    parsed.search !== "" ||
+    parsed.hash !== ""
+  ) {
+    throw new Error(`origin must not include credentials, path, query, or fragment: ${value}`);
+  }
+  return parsed.origin;
+}
+
+function parseConfiguredOrigins(values) {
+  const origins = new Set();
+  for (const rawValue of values) {
+    for (const item of String(rawValue ?? "").split(",")) {
+      if (item.trim() !== "") origins.add(normalizeOrigin(item));
+    }
+  }
+  return origins;
+}
+
+function defaultListenerOrigins(port) {
+  return new Set([
+    `http://127.0.0.1:${port}`,
+    `http://localhost:${port}`,
+  ]);
+}
+
+function validateFrameAncestors(rawValue) {
+  const value = String(rawValue ?? "").trim();
+  if (value === "") throw new Error("frame-ancestors must not be empty");
+  if (/[,;\r\n]/.test(value)) {
+    throw new Error("frame-ancestors contains an invalid separator");
+  }
+  const sources = value.split(/\s+/);
+  if (sources.includes("'none'") && sources.length !== 1) {
+    throw new Error("frame-ancestors 'none' cannot be combined with other sources");
+  }
+  const normalized = sources.map((source) => {
+    if (source === "'self'" || source === "'none'") return source;
+    return normalizeOrigin(source);
+  });
+  return normalized.join(" ");
+}
+
+function websocketOriginAllowed(originHeader, allowedOrigins) {
+  if (typeof originHeader !== "string" || originHeader.trim() === "") return false;
+  try {
+    return allowedOrigins.has(normalizeOrigin(originHeader));
+  } catch (_err) {
+    return false;
+  }
 }
 
 function proxyWebSocket(clientReq, clientSocket, clientHead, target) {
@@ -369,17 +451,42 @@ function loadDefaultLayout() {
   return parsed;
 }
 
-function serveIndex(res, transformedIndex) {
+function loadBuildInfo() {
+  const parsed = JSON.parse(fs.readFileSync(BUILD_INFO_FILE, "utf8"));
+  if (
+    typeof parsed !== "object" ||
+    parsed === null ||
+    parsed.schema !== "xgc2.lichtblick-web.build.v1" ||
+    typeof parsed.package !== "string" ||
+    typeof parsed.version !== "string" ||
+    typeof parsed.upstreamSha !== "string"
+  ) {
+    throw new Error(`${BUILD_INFO_FILE} is not valid XGC2 Lichtblick build metadata`);
+  }
+  return parsed;
+}
+
+function securityHeaders(frameAncestors) {
+  return {
+    "Content-Security-Policy":
+      `frame-ancestors ${frameAncestors}; base-uri 'self'; object-src 'none'`,
+    "Referrer-Policy": "same-origin",
+    "X-Content-Type-Options": "nosniff",
+  };
+}
+
+function serveIndex(res, transformedIndex, responseSecurityHeaders) {
   const body = Buffer.from(transformedIndex);
   res.writeHead(200, {
     "Content-Type": "text/html; charset=utf-8",
     "Content-Length": body.length,
     "Cache-Control": "no-cache",
+    ...responseSecurityHeaders,
   });
   res.end(body);
 }
 
-function serveStatic(req, res, prefix, transformedIndex) {
+function serveStatic(req, res, prefix, transformedIndex, responseSecurityHeaders) {
   const urlPath = req.url.split("?", 1)[0];
   let stripped = urlPath;
   if (prefix !== "/" && urlPath.startsWith(prefix)) {
@@ -387,7 +494,7 @@ function serveStatic(req, res, prefix, transformedIndex) {
     if (!stripped.startsWith("/")) stripped = `/${stripped}`;
   }
   if (stripped === "/" || stripped === "" || stripped === "/index.html") {
-    serveIndex(res, transformedIndex);
+    serveIndex(res, transformedIndex, responseSecurityHeaders);
     return;
   }
 
@@ -402,7 +509,7 @@ function serveStatic(req, res, prefix, transformedIndex) {
       // SPA fallback: serve index.html for paths without an extension
       // (client-side router).
       if (!path.extname(target)) {
-        serveIndex(res, transformedIndex);
+        serveIndex(res, transformedIndex, responseSecurityHeaders);
         return;
       }
       res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
@@ -420,6 +527,7 @@ function serveStatic(req, res, prefix, transformedIndex) {
         res.writeHead(200, {
           "Content-Type": "text/html; charset=utf-8",
           "Cache-Control": "no-cache",
+          ...responseSecurityHeaders,
         });
         res.end(body);
       });
@@ -431,6 +539,7 @@ function serveStatic(req, res, prefix, transformedIndex) {
       "Content-Type": mime,
       "Content-Length": stats.size,
       "Cache-Control": ext === ".html" ? "no-cache" : "public, max-age=3600",
+      ...responseSecurityHeaders,
     });
     fs.createReadStream(target).pipe(res);
   });
@@ -450,7 +559,30 @@ function isWebSocketPath(reqUrl) {
   return pathname === "/ws" || pathname.endsWith("/ws");
 }
 
-function buildRequestListener(targetWs, publicPrefix, transformedIndex) {
+function endpointMatches(reqUrl, publicPrefix, endpoint) {
+  const pathname = reqUrl.split("?", 1)[0];
+  return pathname === `/${endpoint}` ||
+    (publicPrefix !== "/" && pathname === `${publicPrefix}/${endpoint}`);
+}
+
+function writeJson(res, status, payload, responseSecurityHeaders) {
+  const body = Buffer.from(JSON.stringify(payload));
+  res.writeHead(status, {
+    "Content-Type": "application/json; charset=utf-8",
+    "Content-Length": body.length,
+    "Cache-Control": "no-store",
+    ...responseSecurityHeaders,
+  });
+  res.end(body);
+}
+
+function buildRequestListener(
+  targetWs,
+  publicPrefix,
+  transformedIndex,
+  buildInfo,
+  responseSecurityHeaders,
+) {
   return function requestListener(req, res) {
     if (isWebSocketPath(req.url)) {
       // Hand off to raw socket handling in `upgrade` handler below.
@@ -458,20 +590,21 @@ function buildRequestListener(targetWs, publicPrefix, transformedIndex) {
       res.end("upgrade required");
       return;
     }
-    // Lightweight health probe (no cache; useful for systemd / k8s).
-    if (req.url === "/healthz" || req.url === "/health") {
-      const body = JSON.stringify({
+    // Lightweight health probe (no cache; useful for Process Supervisor and
+    // container readiness checks).
+    if (endpointMatches(req.url, publicPrefix, "healthz") ||
+        endpointMatches(req.url, publicPrefix, "health")) {
+      writeJson(res, 200, {
         status: "ok",
         upstream: `${targetWs.protocol}//${targetWs.hostname}:${targetWs.port}${targetWs.path}`,
-      });
-      res.writeHead(200, {
-        "Content-Type": "application/json; charset=utf-8",
-        "Cache-Control": "no-store",
-      });
-      res.end(body);
+      }, responseSecurityHeaders);
       return;
     }
-    serveStatic(req, res, publicPrefix, transformedIndex);
+    if (endpointMatches(req.url, publicPrefix, "version")) {
+      writeJson(res, 200, buildInfo, responseSecurityHeaders);
+      return;
+    }
+    serveStatic(req, res, publicPrefix, transformedIndex, responseSecurityHeaders);
   };
 }
 
@@ -505,6 +638,14 @@ function main() {
     opts.publicUrlPrefix ??
     process.env.PUBLIC_URL_PREFIX ??
     DEFAULT_PUBLIC_URL_PREFIX;
+  const configuredOriginValues = [
+    process.env.ALLOWED_ORIGINS ?? "",
+    ...opts.allowedOrigins,
+  ];
+  const frameAncestorsValue =
+    opts.frameAncestors ??
+    process.env.FRAME_ANCESTORS ??
+    DEFAULT_FRAME_ANCESTORS;
 
   let targetWs;
   try {
@@ -521,15 +662,29 @@ function main() {
   if (prefix.length > 1 && prefix.endsWith("/")) prefix = prefix.slice(0, -1);
 
   let transformedIndex;
+  let buildInfo;
+  let validatedFrameAncestors;
+  let configuredOrigins;
   try {
     const indexSource = fs.readFileSync(path.join(STATIC_ROOT, "index.html"), "utf8");
     transformedIndex = transformIndexHtml(indexSource, loadDefaultLayout(), prefix);
+    buildInfo = loadBuildInfo();
+    validatedFrameAncestors = validateFrameAncestors(frameAncestorsValue);
+    configuredOrigins = parseConfiguredOrigins(configuredOriginValues);
   } catch (err) {
     process.stderr.write(`${LOG_PREFIX}: cannot prepare web entrypoint: ${err.message}\n`);
     process.exit(1);
   }
 
-  const server = http.createServer(buildRequestListener(targetWs, prefix, transformedIndex));
+  const responseSecurityHeaders = securityHeaders(validatedFrameAncestors);
+  const server = http.createServer(buildRequestListener(
+    targetWs,
+    prefix,
+    transformedIndex,
+    buildInfo,
+    responseSecurityHeaders,
+  ));
+  let allowedOrigins = configuredOrigins;
 
   server.on("upgrade", (req, clientSocket, head) => {
     if (!isWebSocketUpgrade(req)) {
@@ -546,6 +701,17 @@ function main() {
       clientSocket.destroy();
       return;
     }
+    if (!websocketOriginAllowed(req.headers.origin, allowedOrigins)) {
+      logWarn(`rejecting WebSocket origin: ${String(req.headers.origin ?? "<missing>")}`);
+      clientSocket.write(
+        "HTTP/1.1 403 Forbidden\r\n" +
+          "Connection: close\r\n" +
+          "Content-Length: 0\r\n" +
+          "\r\n",
+      );
+      clientSocket.destroy();
+      return;
+    }
     proxyWebSocket(req, clientSocket, head, targetWs);
   });
 
@@ -554,10 +720,16 @@ function main() {
     const bound = typeof addr === "object" && addr
       ? `${addr.address}:${addr.port}`
       : "?";
+    const actualPort = typeof addr === "object" && addr ? addr.port : port;
+    allowedOrigins = new Set([
+      ...defaultListenerOrigins(actualPort),
+      ...configuredOrigins,
+    ]);
     logInfo(`serving Lichtblick web bundle on http://${bound}${prefix}/`);
     logInfo(
       `WebSocket upstream: ${targetWs.protocol}//${targetWs.hostname}:${targetWs.port}${targetWs.path}`,
     );
+    logInfo(`allowed WebSocket origins: ${[...allowedOrigins].join(", ")}`);
     logInfo("open the URL above in a browser, or embed behind a reverse proxy");
   });
 
@@ -584,8 +756,16 @@ if (require.main === module) {
 
 module.exports = {
   buildAutoConnectScript,
+  defaultListenerOrigins,
+  endpointMatches,
+  loadBuildInfo,
+  normalizeOrigin,
   parseWsUrl,
   parseArgs,
+  parseConfiguredOrigins,
   safeJoin,
+  securityHeaders,
   transformIndexHtml,
+  validateFrameAncestors,
+  websocketOriginAllowed,
 };

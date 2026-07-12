@@ -37,7 +37,10 @@ server {
 Then start the launcher with:
 
 ```bash
-xgc2-lichtblick-web --public-url-prefix /
+xgc2-lichtblick-web \
+  --public-url-prefix / \
+  --allowed-origin https://ui.example.com \
+  --frame-ancestors "'self' https://ui.example.com"
 ```
 
 The launcher serves `/lichtblick/ws` and `/ws`; nginx preserves that
@@ -60,8 +63,9 @@ ui.example.com {
 ## iframe into another webui
 
 If the parent webui is on a different origin, the launcher sets no
-CORS headers today — same-origin embedding (parent served from the
-same reverse proxy on a sub-path) is the supported path.
+CORS headers — same-origin embedding (parent served from the same reverse proxy
+on a sub-path) is the recommended path. For a deliberately cross-origin parent,
+add its exact origin to both `ALLOWED_ORIGINS` and `FRAME_ANCESTORS`.
 
 ```html
 <iframe
