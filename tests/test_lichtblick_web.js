@@ -122,13 +122,28 @@ globalThis.LICHTBLICK_SUITE_DEFAULT_LAYOUT = [/*LICHTBLICK_SUITE_DEFAULT_LAYOUT_
   assert.match(transformed, /\/lichtblick\/ws/);
 });
 
+test("enables the run-time XGC SceneUpdate topic in the packaged 3D layout", () => {
+  const layout = JSON.parse(
+    fs.readFileSync(path.resolve(__dirname, "../launcher/default-layout.json"), "utf8"),
+  );
+  const panel = layout.configById["3D!xgc2"];
+  assert.deepEqual(panel.topics["/xgc/scene"], {
+    visible: true,
+    showOutlines: false,
+  });
+  assert.equal(panel.followTf, "world");
+  assert.equal(panel.followMode, "follow-pose");
+  assert.equal(panel.cameraState.distance, 12);
+  assert.deepEqual(panel.scene.transforms, { showLabel: false, axisScale: 0, lineWidth: 0 });
+});
+
 test("does not replace an explicit data source", () => {
   const script = buildAutoConnectScript("/");
   assert.match(script, /searchParams\.has\("ds"\)/);
   assert.match(script, /history\.replaceState/);
 });
 
-test("serves installed version metadata and enforces WebSocket Origin", async (t) => {
+test("serves installed metadata, the XGC layout, and enforces WebSocket Origin", async (t) => {
   const temporary = fs.mkdtempSync(path.join(os.tmpdir(), "xgc2-lichtblick-test-"));
   const webRoot = path.join(temporary, "web");
   fs.mkdirSync(webRoot);
@@ -140,12 +155,16 @@ test("serves installed version metadata and enforces WebSocket Origin", async (t
       "</script><body></body></html>",
   );
   const layoutFile = path.join(temporary, "layout.json");
-  fs.writeFileSync(layoutFile, JSON.stringify({ configById: { "3D!xgc2": {} }, layout: "3D!xgc2" }));
+  const defaultLayout = {
+    configById: { "3D!xgc2": { topics: { "/xgc/scene": { visible: true } } } },
+    layout: "3D!xgc2",
+  };
+  fs.writeFileSync(layoutFile, JSON.stringify(defaultLayout));
   const buildInfoFile = path.join(temporary, "build-info.json");
   const buildInfo = {
     schema: "xgc2.lichtblick-web.build.v1",
     package: "xgc2-lichtblick-web",
-    version: "1.25.0-6~test",
+    version: "1.25.0-7~test",
     upstreamSha: "1".repeat(40),
   };
   fs.writeFileSync(buildInfoFile, JSON.stringify(buildInfo));
@@ -208,6 +227,10 @@ test("serves installed version metadata and enforces WebSocket Origin", async (t
     "frame-ancestors 'self' http://127.0.0.1:5173; base-uri 'self'; object-src 'none'",
   );
   assert.equal(version.headers["x-frame-options"], undefined);
+
+  const layout = await getJson(port, "/xgc2-layout.json");
+  assert.deepEqual(layout.body, defaultLayout);
+  assert.equal(layout.headers["cache-control"], "no-store");
 
   assert.match(await websocketUpgradeStatus(port, "https://evil.example"), /^HTTP\/1\.1 403/);
   assert.match(await websocketUpgradeStatus(port, `http://127.0.0.1:${port}`), /^HTTP\/1\.1 101/);

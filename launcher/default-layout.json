@@ -16,6 +16,33 @@
           "rotation": [0, 0, 0],
           "order": 1
         }
+      },
+      "topics": {
+        "/xgc/scene": {
+          "visible": true,
+          "showOutlines": false
+        }
+      },
+      "followTf": "world",
+      "followMode": "follow-pose",
+      "scene": {
+        "transforms": {
+          "showLabel": false,
+          "axisScale": 0,
+          "lineWidth": 0
+        }
+      },
+      "cameraState": {
+        "perspective": true,
+        "distance": 12,
+        "phi": 60,
+        "thetaOffset": 45,
+        "target": [0, 0, 0],
+        "targetOffset": [0, 0, 0],
+        "targetOrientation": [0, 0, 0, 1],
+        "fovy": 45,
+        "near": 0.1,
+        "far": 5000
       }
     }
   },

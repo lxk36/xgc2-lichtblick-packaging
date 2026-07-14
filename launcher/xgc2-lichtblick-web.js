@@ -580,6 +580,7 @@ function buildRequestListener(
   targetWs,
   publicPrefix,
   transformedIndex,
+  defaultLayout,
   buildInfo,
   responseSecurityHeaders,
 ) {
@@ -602,6 +603,14 @@ function buildRequestListener(
     }
     if (endpointMatches(req.url, publicPrefix, "version")) {
       writeJson(res, 200, buildInfo, responseSecurityHeaders);
+      return;
+    }
+    // Lichtblick's built-in `layoutUrl` deep link imports and selects this
+    // layout for an embedded XGC panel. Exposing the same validated layout
+    // that is injected as the first-run default also updates browsers which
+    // already have an older layout in IndexedDB, without patching Lichtblick.
+    if (endpointMatches(req.url, publicPrefix, "xgc2-layout.json")) {
+      writeJson(res, 200, defaultLayout, responseSecurityHeaders);
       return;
     }
     serveStatic(req, res, publicPrefix, transformedIndex, responseSecurityHeaders);
@@ -662,12 +671,14 @@ function main() {
   if (prefix.length > 1 && prefix.endsWith("/")) prefix = prefix.slice(0, -1);
 
   let transformedIndex;
+  let defaultLayout;
   let buildInfo;
   let validatedFrameAncestors;
   let configuredOrigins;
   try {
     const indexSource = fs.readFileSync(path.join(STATIC_ROOT, "index.html"), "utf8");
-    transformedIndex = transformIndexHtml(indexSource, loadDefaultLayout(), prefix);
+    defaultLayout = loadDefaultLayout();
+    transformedIndex = transformIndexHtml(indexSource, defaultLayout, prefix);
     buildInfo = loadBuildInfo();
     validatedFrameAncestors = validateFrameAncestors(frameAncestorsValue);
     configuredOrigins = parseConfiguredOrigins(configuredOriginValues);
@@ -681,6 +692,7 @@ function main() {
     targetWs,
     prefix,
     transformedIndex,
+    defaultLayout,
     buildInfo,
     responseSecurityHeaders,
   ));
