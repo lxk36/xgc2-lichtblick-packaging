@@ -115,6 +115,12 @@ same-origin WebSocket endpoint to `ws://127.0.0.1:8765`:
 http://127.0.0.1:8080/
 ```
 
+The launcher also serves the validated packaged layout at
+`/xgc2-layout.json`. The embedded XGC panel passes that endpoint through
+Lichtblick's supported `layoutUrl` deep link, so `/xgc/scene`, the `world`
+frame, and the XGC camera settings are applied even when the browser already
+has an older saved layout.
+
 The launcher exposes lightweight runtime metadata for XGC Process Supervisor
 discovery and diagnostics. The response is generated from immutable metadata
 written into the Debian package at build time, rather than from a launcher
