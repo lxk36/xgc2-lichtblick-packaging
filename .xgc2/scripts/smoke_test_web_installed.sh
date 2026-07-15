@@ -3,10 +3,11 @@ set -euo pipefail
 
 package_name="xgc2-lichtblick-web"
 launcher="/usr/bin/xgc2-lichtblick-web"
+node="/usr/lib/xgc2/lichtblick-web/node/bin/node"
 
 [[ "$(dpkg-query -W -f='${db:Status-Abbrev}' "${package_name}")" == ii* ]]
 [[ -x "${launcher}" ]]
-[[ -x /usr/lib/xgc2/lichtblick-web/node/bin/node ]]
+[[ -x "${node}" ]]
 [[ -f /usr/lib/xgc2/lichtblick-web/web/index.html ]]
 [[ -f /usr/lib/xgc2/lichtblick-web/default-layout.json ]]
 [[ -f /usr/lib/xgc2/lichtblick-web/build-info.json ]]
@@ -45,6 +46,17 @@ curl --fail --silent --show-error "http://127.0.0.1:${port}/version" \
 grep -Fq '"schema":"xgc2.lichtblick-web.build.v1"' "${smoke_dir}/version.json"
 grep -Fq '"package":"xgc2-lichtblick-web"' "${smoke_dir}/version.json"
 grep -Fq '"version":' "${smoke_dir}/version.json"
+curl --fail --silent --show-error "http://127.0.0.1:${port}/xgc2-layout.json" \
+  > "${smoke_dir}/layout.json"
+"${node}" - "${smoke_dir}/layout.json" <<'NODE'
+const fs = require("node:fs");
+
+const layout = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+const meshUpAxis = layout.configById?.["3D!xgc2"]?.scene?.meshUpAxis;
+if (meshUpAxis !== "z_up") {
+  throw new Error(`expected XGC2 mesh up axis z_up, got ${String(meshUpAxis)}`);
+}
+NODE
 curl --fail --silent --show-error "http://127.0.0.1:${port}/" \
   > "${smoke_dir}/index.html"
 grep -Fq '"layout":"3D!xgc2"' "${smoke_dir}/index.html"

@@ -134,6 +134,7 @@ test("enables the run-time XGC SceneUpdate topic in the packaged 3D layout", () 
   assert.equal(panel.followTf, "world");
   assert.equal(panel.followMode, "follow-pose");
   assert.equal(panel.cameraState.distance, 12);
+  assert.equal(panel.scene.meshUpAxis, "z_up");
   assert.deepEqual(panel.scene.transforms, { showLabel: false, axisScale: 0, lineWidth: 0 });
 });
 
