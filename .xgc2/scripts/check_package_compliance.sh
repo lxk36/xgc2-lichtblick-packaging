@@ -74,6 +74,16 @@ grep -Fq 'export USE_SYSTEM_FPM=true' .xgc2/scripts/build_deb_in_docker.sh
 grep -Fq 'fpm --version' .xgc2/scripts/build_deb_in_docker.sh
 grep -Fq 'bsdtar -xf' .xgc2/scripts/build_deb_in_docker.sh
 
+# libasound2 is a virtual package on Noble. Keep both the replacement and
+# fallback relationship versioned so the unversioned OSS shim cannot satisfy
+# the desktop package. This source-level guard catches release-time rewrites
+# before the six expensive package builds start.
+alsa_relation_count="$(grep -Foc 'libasound2 (>= 1.0.16)' .xgc2/scripts/build_deb.sh || true)"
+if [[ "${alsa_relation_count}" != 2 ]]; then
+  echo "build_deb.sh must emit the versioned libasound2 relationship in both paths." >&2
+  exit 1
+fi
+
 product_version="$(sed -n 's/^version:[[:space:]]*//p' .xgc2/product.yml | head -n 1)"
 case "${product_version}" in
   "${LICHTBLICK_VERSION}-"*) product_revision="${product_version#${LICHTBLICK_VERSION}-}" ;;
