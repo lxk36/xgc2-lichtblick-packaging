@@ -26,6 +26,7 @@
       "followTf": "world",
       "followMode": "follow-pose",
       "scene": {
+        "meshUpAxis": "z_up",
         "transforms": {
           "showLabel": false,
           "axisScale": 0,
