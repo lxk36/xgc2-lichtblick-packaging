@@ -122,11 +122,15 @@ globalThis.LICHTBLICK_SUITE_DEFAULT_LAYOUT = [/*LICHTBLICK_SUITE_DEFAULT_LAYOUT_
   assert.match(transformed, /\/lichtblick\/ws/);
 });
 
-test("enables the run-time XGC SceneUpdate topic in the packaged 3D layout", () => {
+test("packages one 3D panel with only the run-time XGC SceneUpdate topic", () => {
   const layout = JSON.parse(
     fs.readFileSync(path.resolve(__dirname, "../launcher/default-layout.json"), "utf8"),
   );
-  const panel = layout.configById["3D!xgc2"];
+  assert.equal(layout.layout, "3D!xgc2");
+  assert.deepEqual(Object.keys(layout.configById), ["3D!xgc2"]);
+
+  const panel = layout.configById[layout.layout];
+  assert.deepEqual(Object.keys(panel.topics), ["/xgc/scene"]);
   assert.deepEqual(panel.topics["/xgc/scene"], {
     visible: true,
     showOutlines: false,
