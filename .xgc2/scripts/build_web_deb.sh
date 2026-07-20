@@ -55,7 +55,8 @@ install -d \
   "${pkg_root}/usr/bin" \
   "${pkg_root}/usr/lib/xgc2/lichtblick-web/node/bin" \
   "${pkg_root}/usr/lib/xgc2/lichtblick-web/web" \
-  "${pkg_root}/usr/share/doc/${package_name}"
+  "${pkg_root}/usr/share/doc/${package_name}" \
+  "${pkg_root}/usr/share/xgc2/process-definitions"
 
 cp -a "${web_root}/." "${pkg_root}/usr/lib/xgc2/lichtblick-web/web/"
 install -m 0755 "$(command -v node)" \
@@ -66,6 +67,8 @@ install -m 0644 "${repo_root}/launcher/xgc2-lichtblick-web.js" \
   "${pkg_root}/usr/lib/xgc2/lichtblick-web/xgc2-lichtblick-web.js"
 install -m 0644 "${repo_root}/launcher/default-layout.json" \
   "${pkg_root}/usr/lib/xgc2/lichtblick-web/default-layout.json"
+install -m 0644 "${repo_root}/process-definitions/xgc2-lichtblick-web.json" \
+  "${pkg_root}/usr/share/xgc2/process-definitions/xgc2-lichtblick-web.json"
 python3 - \
   "${pkg_root}/usr/lib/xgc2/lichtblick-web/build-info.json" \
   "${package_version}" \

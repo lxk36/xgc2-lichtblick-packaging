@@ -12,6 +12,8 @@ node="/usr/lib/xgc2/lichtblick-web/node/bin/node"
 [[ -f /usr/lib/xgc2/lichtblick-web/default-layout.json ]]
 [[ -f /usr/lib/xgc2/lichtblick-web/build-info.json ]]
 [[ -f /etc/xgc2/lichtblick-web.env ]]
+[[ -f /usr/share/xgc2/process-definitions/xgc2-lichtblick-web.json ]]
+python3 -m json.tool /usr/share/xgc2/process-definitions/xgc2-lichtblick-web.json >/dev/null
 
 smoke_dir="$(mktemp -d)"
 server_pid=""
