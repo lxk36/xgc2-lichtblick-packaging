@@ -38,7 +38,7 @@ that the same tag has the same SHA in the canonical Lichtblick repository.
 
 The default Debian package is `xgc2-lichtblick-web`. It contains the production
 Web bundle, a pinned architecture-matched Node runtime, a command-line HTTP and
-WebSocket proxy, and a single-3D-panel initial layout. It does not open a window
+WebSocket proxy, and a 3D plus camera-AR initial layout. It does not open a window
 or register an automatic service. The optional `xgc2-lichtblick` package retains
 the Electron desktop application. Its Debian revision comes from
 `.xgc2/product.yml`, which lets the parent release orchestrator bump packaging
@@ -108,7 +108,7 @@ can still be installed before a ROS repository is configured or on a machine
 that only consumes a bridge running on another execution target.
 
 The command prints its URL, listens on `127.0.0.1:8080` by default, opens with a
-3D visualization layout, and automatically connects the browser through its
+3D scene beside `/usb_cam/image_raw` augmented by `/xgc/scene`, and automatically connects the browser through its
 same-origin WebSocket endpoint to `ws://127.0.0.1:8765`:
 
 ```text
@@ -118,8 +118,24 @@ http://127.0.0.1:8080/
 The launcher also serves the validated packaged layout at
 `/xgc2-layout.json`. The embedded XGC panel passes that endpoint through
 Lichtblick's supported `layoutUrl` deep link, so `/xgc/scene`, the `world`
-frame, and the XGC camera settings are applied even when the browser already
+frame, CameraInfo projection, and the XGC camera settings are applied even when the browser already
 has an older saved layout.
+
+For standalone diagnostics, the launcher also serves `/xgc2-3d-layout.json`
+and `/xgc2-ar-layout.json`. Passing either endpoint through Lichtblick's
+`layoutUrl` deep link opens only the 3D fleet view or only the camera AR view,
+without depending on the XGC host application's current page structure.
+On older Lichtblick bundles that predate `layoutUrl`, run two launcher origins
+with `--initial-view 3d` and `--initial-view ar`; separate origins also isolate
+their browser layout persistence.
+
+The XGC panel can choose whether the initial camera AR panel opens and can
+override the grid visibility, RGB color, size, division count, and line width
+for each supervised workflow Run. These values
+only build that process instance's bootstrap layout. The panel records the
+successful bootstrap in browser session storage and omits `layoutUrl` on later
+iframe mounts for the same process, so edits made inside Lichtblick are not
+re-imported over when the operator switches panel views.
 
 The launcher exposes lightweight runtime metadata for XGC Process Supervisor
 discovery and diagnostics. The response is generated from immutable metadata

@@ -45,6 +45,44 @@
         "near": 0.1,
         "far": 5000
       }
+    },
+    "Image!xgc2-camera-ar": {
+      "imageMode": {
+        "imageTopic": "/usb_cam/image_raw",
+        "calibrationTopic": "/usb_cam/camera_info",
+        "synchronize": false,
+        "rotation": 0,
+        "annotations": {}
+      },
+      "topics": {
+        "/xgc/scene": {
+          "visible": true,
+          "showOutlines": false
+        }
+      },
+      "followMode": "follow-pose",
+      "scene": {
+        "meshUpAxis": "z_up",
+        "labelScaleFactor": 1.25,
+        "transforms": {
+          "showLabel": false,
+          "axisScale": 0,
+          "lineWidth": 0
+        }
+      },
+      "layers": {},
+      "cameraState": {
+        "perspective": true,
+        "distance": 12,
+        "phi": 60,
+        "thetaOffset": 45,
+        "target": [0, 0, 0],
+        "targetOffset": [0, 0, 0],
+        "targetOrientation": [0, 0, 0, 1],
+        "fovy": 45,
+        "near": 0.1,
+        "far": 5000
+      }
     }
   },
   "globalVariables": {},
@@ -53,5 +91,10 @@
     "speed": 1,
     "messageOrder": "receiveTime"
   },
-  "layout": "3D!xgc2"
+  "layout": {
+    "first": "3D!xgc2",
+    "second": "Image!xgc2-camera-ar",
+    "direction": "row",
+    "splitPercentage": 45
+  }
 }
