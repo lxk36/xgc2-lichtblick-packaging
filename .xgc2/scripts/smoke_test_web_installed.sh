@@ -50,18 +50,47 @@ grep -Fq '"package":"xgc2-lichtblick-web"' "${smoke_dir}/version.json"
 grep -Fq '"version":' "${smoke_dir}/version.json"
 curl --fail --silent --show-error "http://127.0.0.1:${port}/xgc2-layout.json" \
   > "${smoke_dir}/layout.json"
-"${node}" - "${smoke_dir}/layout.json" <<'NODE'
+curl --fail --silent --show-error "http://127.0.0.1:${port}/xgc2-3d-layout.json" \
+  > "${smoke_dir}/3d-layout.json"
+curl --fail --silent --show-error "http://127.0.0.1:${port}/xgc2-ar-layout.json" \
+  > "${smoke_dir}/ar-layout.json"
+"${node}" - \
+  "${smoke_dir}/layout.json" \
+  "${smoke_dir}/3d-layout.json" \
+  "${smoke_dir}/ar-layout.json" <<'NODE'
 const fs = require("node:fs");
 
 const layout = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+const threeDLayout = JSON.parse(fs.readFileSync(process.argv[3], "utf8"));
+const arLayout = JSON.parse(fs.readFileSync(process.argv[4], "utf8"));
 const meshUpAxis = layout.configById?.["3D!xgc2"]?.scene?.meshUpAxis;
 if (meshUpAxis !== "z_up") {
   throw new Error(`expected XGC2 mesh up axis z_up, got ${String(meshUpAxis)}`);
 }
+if (
+  layout.layout?.first !== "3D!xgc2" ||
+  layout.layout?.second !== "Image!xgc2-camera-ar" ||
+  layout.layout?.direction !== "row"
+) {
+  throw new Error("expected the installed default to use the split 3D/AR layout");
+}
+if (
+  threeDLayout.layout !== "3D!xgc2" ||
+  Object.keys(threeDLayout.configById ?? {}).join() !== "3D!xgc2"
+) {
+  throw new Error("expected a standalone 3D layout endpoint");
+}
+if (
+  arLayout.layout !== "Image!xgc2-camera-ar" ||
+  Object.keys(arLayout.configById ?? {}).join() !== "Image!xgc2-camera-ar"
+) {
+  throw new Error("expected a standalone camera AR layout endpoint");
+}
 NODE
 curl --fail --silent --show-error "http://127.0.0.1:${port}/" \
   > "${smoke_dir}/index.html"
-grep -Fq '"layout":"3D!xgc2"' "${smoke_dir}/index.html"
+grep -Fq '"first":"3D!xgc2"' "${smoke_dir}/index.html"
+grep -Fq '"second":"Image!xgc2-camera-ar"' "${smoke_dir}/index.html"
 grep -Fq 'foxglove-websocket' "${smoke_dir}/index.html"
 grep -Fq '/ws' "${smoke_dir}/index.html"
 curl --fail --silent --show-error --dump-header "${smoke_dir}/headers" \
