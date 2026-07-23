@@ -200,6 +200,88 @@
         "backoff": 0
       },
       "digest": ""
+    },
+    {
+      "id": "lichtblick-web",
+      "version": "1.6.0",
+      "label": "Lichtblick WebUI",
+      "description": "Pinned Lichtblick web workspace installed by xgc2-lichtblick-web and embedded through the XGC same-origin proxy.",
+      "drivers": [
+        "host"
+      ],
+      "parameters": {
+        "properties": {
+          "bridgePort": {
+            "type": "integer",
+            "description": "Foxglove-compatible WebSocket port on the local host",
+            "default": 8765,
+            "minimum": 1,
+            "maximum": 65535
+          },
+          "port": {
+            "type": "integer",
+            "description": "Lichtblick HTTP port on the local host; XGC uses the dedicated loopback port 18081",
+            "default": 18081,
+            "minimum": 1,
+            "maximum": 65535
+          }
+        },
+        "additionalProperties": false
+      },
+      "resourceClaims": [
+        {
+          "bindingKey": "http",
+          "kind": "tcp-listener",
+          "mode": "",
+          "capacity": 0,
+          "address": "127.0.0.1",
+          "portParameter": "port"
+        }
+      ],
+      "command": {
+        "executable": "/usr/bin/xgc2-lichtblick-web",
+        "args": [
+          "--host",
+          "127.0.0.1",
+          "--port",
+          "${port}",
+          "--control-plane-url",
+          "ws://127.0.0.1:${bridgePort}",
+          "--public-url-prefix",
+          "/"
+        ]
+      },
+      "readiness": {
+        "kind": "tcp",
+        "address": "127.0.0.1:${port}",
+        "command": {
+          "executable": ""
+        },
+        "interval": 1000000000,
+        "timeout": 1000000000,
+        "successThreshold": 1,
+        "failureThreshold": 3
+      },
+      "liveness": {
+        "kind": "tcp",
+        "address": "127.0.0.1:${port}",
+        "command": {
+          "executable": ""
+        },
+        "interval": 1000000000,
+        "timeout": 1000000000,
+        "successThreshold": 1,
+        "failureThreshold": 3
+      },
+      "stop": {
+        "gracePeriod": 5000000000
+      },
+      "restart": {
+        "mode": "never",
+        "maxRestarts": 0,
+        "backoff": 0
+      },
+      "digest": ""
     }
   ]
 }

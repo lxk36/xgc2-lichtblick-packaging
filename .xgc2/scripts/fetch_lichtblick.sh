@@ -58,30 +58,30 @@ source_is_ready() {
   [[ -z "$(git -C "${source_dir}" ls-files --others --exclude-standard)" ]]
 }
 
-canonical_refs=""
+upstream_refs=""
 attempt=1
-while ! canonical_refs="$(git ls-remote \
+while ! upstream_refs="$(git ls-remote \
   --tags \
-  "${LICHTBLICK_CANONICAL_REPOSITORY}" \
+  "${LICHTBLICK_REPOSITORY}" \
   "refs/tags/${LICHTBLICK_REF}" \
   "refs/tags/${LICHTBLICK_REF}^{}")"; do
   if (( attempt >= max_attempts )); then
-    echo "Failed to resolve canonical Lichtblick tag after ${attempt} attempts." >&2
+    echo "Failed to resolve official Lichtblick tag after ${attempt} attempts." >&2
     exit 1
   fi
-  echo "Retrying canonical Lichtblick tag lookup after attempt ${attempt}/${max_attempts}..." >&2
+  echo "Retrying official Lichtblick tag lookup after attempt ${attempt}/${max_attempts}..." >&2
   sleep $((attempt * 5))
   attempt=$((attempt + 1))
 done
-canonical_tag_sha="$(awk -v peeled="refs/tags/${LICHTBLICK_REF}^{}" \
-  '$2 == peeled { print $1 }' <<< "${canonical_refs}")"
-if [[ -z "${canonical_tag_sha}" ]]; then
-  canonical_tag_sha="$(awk -v direct="refs/tags/${LICHTBLICK_REF}" \
-    '$2 == direct { print $1 }' <<< "${canonical_refs}")"
+upstream_tag_sha="$(awk -v peeled="refs/tags/${LICHTBLICK_REF}^{}" \
+  '$2 == peeled { print $1 }' <<< "${upstream_refs}")"
+if [[ -z "${upstream_tag_sha}" ]]; then
+  upstream_tag_sha="$(awk -v direct="refs/tags/${LICHTBLICK_REF}" \
+    '$2 == direct { print $1 }' <<< "${upstream_refs}")"
 fi
-if [[ ! "${canonical_tag_sha}" =~ ^[0-9a-f]{40}$ ]] ||
-   [[ "${canonical_tag_sha}" != "${LICHTBLICK_SHA}" ]]; then
-  echo "Canonical ${LICHTBLICK_REF} is ${canonical_tag_sha:-<missing>}; expected ${LICHTBLICK_SHA}." >&2
+if [[ ! "${upstream_tag_sha}" =~ ^[0-9a-f]{40}$ ]] ||
+   [[ "${upstream_tag_sha}" != "${LICHTBLICK_SHA}" ]]; then
+  echo "Official ${LICHTBLICK_REF} is ${upstream_tag_sha:-<missing>}; expected ${LICHTBLICK_SHA}." >&2
   exit 1
 fi
 
@@ -157,4 +157,4 @@ while true; do
 done
 
 echo "Fetched ${LICHTBLICK_REPOSITORY}@${LICHTBLICK_REF} (${LICHTBLICK_SHA})."
-echo "Verified the same tag and SHA in ${LICHTBLICK_CANONICAL_REPOSITORY}."
+echo "Verified the tag and SHA against the official Lichtblick repository."

@@ -46,30 +46,20 @@ jobs:
           }
 
           latest_tag="$({
-            git ls-remote --tags --refs "$LICHTBLICK_CANONICAL_REPOSITORY" 'refs/tags/v*' |
+            git ls-remote --tags --refs "$LICHTBLICK_REPOSITORY" 'refs/tags/v*' |
               awk '{sub("refs/tags/", "", $2); print $2}' |
               grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' || true
           } | sort -V | tail -n1)"
           [[ -n "$latest_tag" ]] || {
-            echo "No stable semantic-version tag found in $LICHTBLICK_CANONICAL_REPOSITORY" >&2
+            echo "No stable semantic-version tag found in $LICHTBLICK_REPOSITORY" >&2
             exit 1
           }
 
-          canonical_sha="$(resolve_remote_tag_commit \
-            "$LICHTBLICK_CANONICAL_REPOSITORY" "$latest_tag")"
-          fork_sha="$(resolve_remote_tag_commit "$LICHTBLICK_REPOSITORY" "$latest_tag")"
-          [[ "$canonical_sha" =~ ^[0-9a-f]{40}$ ]] || {
-            echo "Cannot resolve canonical tag $latest_tag" >&2
+          upstream_sha="$(resolve_remote_tag_commit "$LICHTBLICK_REPOSITORY" "$latest_tag")"
+          [[ "$upstream_sha" =~ ^[0-9a-f]{40}$ ]] || {
+            echo "Cannot resolve official tag $latest_tag" >&2
             exit 1
           }
-          if [[ -z "$fork_sha" ]]; then
-            echo "::error title=Lichtblick source fork is behind::Sync $latest_tag from $LICHTBLICK_CANONICAL_REPOSITORY into $LICHTBLICK_REPOSITORY before updating packages."
-            exit 1
-          fi
-          if [[ "$fork_sha" != "$canonical_sha" ]]; then
-            echo "Source fork tag $latest_tag is $fork_sha, but canonical is $canonical_sha" >&2
-            exit 1
-          fi
 
           if [[ "$latest_tag" == "$LICHTBLICK_REF" ]]; then
             echo "update=false" >> "$GITHUB_OUTPUT"
@@ -86,8 +76,8 @@ jobs:
           checkout="$RUNNER_TEMP/lichtblick-source"
           git clone --depth 1 --branch "$latest_tag" "$LICHTBLICK_REPOSITORY" "$checkout"
           latest_sha="$(git -C "$checkout" rev-parse HEAD)"
-          [[ "$latest_sha" == "$canonical_sha" ]] || {
-            echo "Cloned source SHA $latest_sha does not match canonical $canonical_sha" >&2
+          [[ "$latest_sha" == "$upstream_sha" ]] || {
+            echo "Cloned source SHA $latest_sha does not match official tag $upstream_sha" >&2
             exit 1
           }
           latest_version="${latest_tag#v}"

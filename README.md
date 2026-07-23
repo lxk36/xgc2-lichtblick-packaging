@@ -19,14 +19,15 @@ This repository owns:
 
 It intentionally does not commit a copy of the Lichtblick source tree, develop
 XGC2-specific Lichtblick features, hold the APT signing key, or operate the APT
-server. Application development and upstream synchronization belong in
-[`lxk36/xgc2-lichtblick`](https://github.com/lxk36/xgc2-lichtblick). Repository
-signing and index publication remain server-side operations.
+server. It builds directly from the official
+[`lichtblick-suite/lichtblick`](https://github.com/lichtblick-suite/lichtblick)
+repository. Repository signing and index publication remain server-side
+operations. The mandatory ownership and upgrade rules are documented in
+[`MAINTENANCE.md`](MAINTENANCE.md).
 
-The initial product release pins the XGC2 source fork's `v1.25.0` by both tag
-and commit SHA. A tag is never accepted on its own: every build verifies that
-the fetched checkout still matches the SHA recorded in `lichtblick.lock` and
-that the same tag has the same SHA in the canonical Lichtblick repository.
+The current product release pins official `v1.27.0` by both tag and commit SHA.
+A tag is never accepted on its own: every build verifies that the official tag
+still matches the SHA recorded in `lichtblick.lock`.
 
 ## Package matrix
 
@@ -37,9 +38,8 @@ that the same tag has the same SHA in the canonical Lichtblick repository.
 | 24.04 | noble | yes | yes |
 
 The default Debian package is `xgc2-lichtblick-web`. It contains the production
-Web bundle, a pinned architecture-matched Node runtime, a command-line HTTP and
-WebSocket proxy, and a 3D plus camera-AR initial layout. It does not open a window
-or register an automatic service. The optional `xgc2-lichtblick` package retains
+Web bundle, a pinned architecture-matched Node runtime, and a command-line HTTP and
+WebSocket proxy. It does not open a window or register an automatic service. The optional `xgc2-lichtblick` package retains
 the Electron desktop application. Its Debian revision comes from
 `.xgc2/product.yml`, which lets the parent release orchestrator bump packaging
 revisions without changing the immutable source lock.
@@ -63,7 +63,7 @@ The wrapper builds Lichtblick, installs the resulting package on the same native
 architecture, runs the smoke test, and checks package removal before it copies a
 deb to the output directory.
 
-Lichtblick v1.25.0 uses electron-builder 26. Its app-builder supports the
+Lichtblick v1.27.0 uses electron-builder 26. Its app-builder supports the
 `USE_SYSTEM_FPM=true` compatibility switch used here to select the pinned
 native bundle. This coupling is intentional: if an upstream upgrade moves to
 electron-builder 27, migrate the pin to electron-builder's `toolsets.fpm`
@@ -107,35 +107,18 @@ installs the bridge automatically. It remains a recommendation so the WebUI
 can still be installed before a ROS repository is configured or on a machine
 that only consumes a bridge running on another execution target.
 
-The command prints its URL, listens on `127.0.0.1:8080` by default, opens with a
-3D scene beside `/usb_cam/image_raw` augmented by `/xgc/scene`, and automatically connects the browser through its
-same-origin WebSocket endpoint to `ws://127.0.0.1:8765`:
+The command prints its URL, listens on `127.0.0.1:8080` by default, and
+automatically connects the browser through its same-origin WebSocket endpoint to
+`ws://127.0.0.1:8765`:
 
 ```text
 http://127.0.0.1:8080/
 ```
 
-The launcher also serves the validated packaged layout at
-`/xgc2-layout.json`. The embedded XGC panel passes that endpoint through
-Lichtblick's supported `layoutUrl` deep link, so `/xgc/scene`, the `world`
-frame, CameraInfo projection, and the XGC camera settings are applied even when the browser already
-has an older saved layout.
-
-For standalone diagnostics, the launcher also serves `/xgc2-3d-layout.json`
-and `/xgc2-ar-layout.json`. Passing either endpoint through Lichtblick's
-`layoutUrl` deep link opens only the 3D fleet view or only the camera AR view,
-without depending on the XGC host application's current page structure.
-On older Lichtblick bundles that predate `layoutUrl`, run two launcher origins
-with `--initial-view 3d` and `--initial-view ar`; separate origins also isolate
-their browser layout persistence.
-
-The XGC panel can choose whether the initial camera AR panel opens and can
-override the grid visibility, RGB color, size, division count, and line width
-for each supervised workflow Run. These values
-only build that process instance's bootstrap layout. The panel records the
-successful bootstrap in browser session storage and omits `layoutUrl` on later
-iframe mounts for the same process, so edits made inside Lichtblick are not
-re-imported over when the operator switches panel views.
+The browser package intentionally contains no XGC-specific panel, grid, camera,
+or layout defaults. XGC generates a layout from the frozen workflow Run and
+passes its own same-origin `layoutUrl` to the iframe. This keeps package updates
+independent from XGC scene and robot visualization changes.
 
 The launcher exposes lightweight runtime metadata for XGC Process Supervisor
 discovery and diagnostics. The response is generated from immutable metadata
@@ -207,11 +190,9 @@ using the release-scoped staging APT overlay, and uploads only trusted
 validates and promotes those artifacts; this repository has no production APT
 credentials and cannot write the repository.
 
-`update-lichtblick.yml` checks the canonical repository for the highest stable
-semantic version tag. It only proceeds after the source fork exposes the same
-tag at the same commit; otherwise the scheduled run fails with an explicit fork
-sync instruction. When a mirrored newer tag exists, it opens or refreshes a
-pull request that updates `lichtblick.lock`, the product version, and all
+`update-lichtblick.yml` checks the official repository for the highest stable
+semantic version tag. When a newer tag exists, it opens or refreshes a pull
+request that updates `lichtblick.lock`, the product version, and all
 distribution versions.
 It never auto-merges: the full package matrix must pass before a maintainer
 accepts the source upgrade. Because branches and pull requests created by the

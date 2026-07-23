@@ -17,6 +17,7 @@ cd "${repo_root}"
 
 required_files=(
   README.md
+  MAINTENANCE.md
   lichtblick.lock
   .xgc2/product.yml
   .xgc2/scripts/fetch_lichtblick.sh
@@ -31,7 +32,6 @@ required_files=(
   .github/workflows/release.yml
   tests/test_artifact_manifest.py
   tests/test_lichtblick_web.js
-  launcher/default-layout.json
   launcher/lichtblick-web.env
   launcher/reverse-proxy-examples.md
   launcher/xgc2-lichtblick-web
@@ -49,8 +49,7 @@ done
 
 # shellcheck disable=SC1091
 source lichtblick.lock
-[[ "${LICHTBLICK_REPOSITORY}" == "https://github.com/lxk36/xgc2-lichtblick.git" ]]
-[[ "${LICHTBLICK_CANONICAL_REPOSITORY}" == "https://github.com/lichtblick-suite/lichtblick.git" ]]
+[[ "${LICHTBLICK_REPOSITORY}" == "https://github.com/lichtblick-suite/lichtblick.git" ]]
 [[ "${LICHTBLICK_REF}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
 [[ "${LICHTBLICK_SHA}" =~ ^[0-9a-f]{40}$ ]]
 [[ "${LICHTBLICK_VERSION}" == "${LICHTBLICK_REF#v}" ]]
@@ -216,7 +215,6 @@ validate_deb() {
   grep -Fq './usr/bin/xgc2-lichtblick-web' "${contents_file}"
   grep -Fq './usr/lib/xgc2/lichtblick-web/node/bin/node' "${contents_file}"
   grep -Fq './usr/lib/xgc2/lichtblick-web/web/index.html' "${contents_file}"
-  grep -Fq './usr/lib/xgc2/lichtblick-web/default-layout.json' "${contents_file}"
   grep -Fq './usr/lib/xgc2/lichtblick-web/build-info.json' "${contents_file}"
   grep -Fq './usr/share/xgc2/process-definitions/xgc2-lichtblick-web.json' "${contents_file}"
   grep -Fq './etc/xgc2/lichtblick-web.env' "${contents_file}"

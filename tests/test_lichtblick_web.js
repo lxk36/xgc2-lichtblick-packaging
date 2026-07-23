@@ -14,11 +14,8 @@ process.env.XGC2_LICHTBLICK_WEB_ENV_FILE = "/tmp/unused.env";
 
 const {
   buildAutoConnectScript,
-  configureDefaultLayout,
-  configureStandalonePanel,
   defaultListenerOrigins,
   endpointMatches,
-  isPanelLayout,
   normalizeOrigin,
   parseArgs,
   parseConfiguredOrigins,
@@ -48,20 +45,13 @@ test("parses the browser server command line", () => {
       publicUrlPrefix: "/lichtblick",
       allowedOrigins: ["https://xgc.example", "http://127.0.0.1:5173"],
       frameAncestors: "'self' https://xgc.example",
-      initialView: null,
-      arVisible: null,
-      gridVisible: null,
-      gridColor: null,
-      gridSize: null,
-      gridDivisions: null,
-      gridLineWidth: null,
       showHelp: false,
     },
   );
 });
 
-test("parses and validates initial grid options", () => {
-  const parsed = parseArgs([
+test("accepts historic XGC layout flags as no-ops", () => {
+  assert.deepEqual(parseArgs([
     "--initial-view", "ar",
     "--ar-visible", "false",
     "--grid-visible", "false",
@@ -69,18 +59,11 @@ test("parses and validates initial grid options", () => {
     "--grid-size", "24.5",
     "--grid-divisions", "48",
     "--grid-line-width", "2.5",
-  ]);
-  assert.equal(parsed.initialView, "ar");
-  assert.equal(parsed.arVisible, false);
-  assert.equal(parsed.gridVisible, false);
-  assert.equal(parsed.gridColor, "#a1b2c3");
-  assert.equal(parsed.gridSize, 24.5);
-  assert.equal(parsed.gridDivisions, 48);
-  assert.equal(parsed.gridLineWidth, 2.5);
-  assert.throws(() => parseArgs(["--grid-color", "blue"]), /invalid --grid-color/);
-  assert.throws(() => parseArgs(["--ar-visible", "yes"]), /invalid --ar-visible/);
-  assert.throws(() => parseArgs(["--initial-view", "camera"]), /invalid --initial-view/);
-  assert.throws(() => parseArgs(["--grid-divisions", "1.5"]), /invalid --grid-divisions/);
+  ]), {
+    host: null,port: null,controlPlaneUrl: null,publicUrlPrefix: null,
+    allowedOrigins: [],frameAncestors: null,showHelp: false,
+  });
+  assert.throws(() => parseArgs(["--grid-color"]), /missing value/);
 });
 
 test("normalizes exact HTTP origins and rejects ambiguous sources", () => {
@@ -142,156 +125,35 @@ test("keeps static paths inside the web root", () => {
   assert.equal(safeJoin("/srv/web", "/%2e%2e/etc/passwd"), null);
 });
 
-test("injects a split panel layout and same-origin auto-connect", () => {
+test("leaves upstream layout ownership untouched and injects same-origin auto-connect", () => {
   const source = `<!doctype html><html><head></head><script>
 globalThis.LICHTBLICK_SUITE_DEFAULT_LAYOUT = [/*LICHTBLICK_SUITE_DEFAULT_LAYOUT_PLACEHOLDER*/][0];
 </script><body></body></html>`;
-  const layout = {
-    configById: { "3D!xgc2": {}, "Image!ar": {} },
-    layout: { first: "3D!xgc2", second: "Image!ar", direction: "row", splitPercentage: 45 },
-  };
-  const transformed = transformIndexHtml(source, layout, "/lichtblick");
+  const transformed = transformIndexHtml(source, "/lichtblick");
 
-  assert.match(transformed, /"direction":"row","splitPercentage":45/);
-  assert.doesNotMatch(transformed, /LICHTBLICK_SUITE_DEFAULT_LAYOUT_PLACEHOLDER/);
+  assert.match(transformed, /LICHTBLICK_SUITE_DEFAULT_LAYOUT_PLACEHOLDER/);
   assert.match(transformed, /foxglove-websocket/);
   assert.match(transformed, /\/lichtblick\/ws/);
 });
 
-test("packages a 3D scene beside camera-calibrated augmented reality", () => {
-  const layout = JSON.parse(
-    fs.readFileSync(path.resolve(__dirname, "../launcher/default-layout.json"), "utf8"),
-  );
-  assert.deepEqual(layout.layout, {
-    first: "3D!xgc2",
-    second: "Image!xgc2-camera-ar",
-    direction: "row",
-    splitPercentage: 45,
-  });
-  assert.deepEqual(Object.keys(layout.configById), ["3D!xgc2", "Image!xgc2-camera-ar"]);
-
-  const panel = layout.configById[layout.layout.first];
-  assert.deepEqual(Object.keys(panel.topics), ["/xgc/scene"]);
-  assert.deepEqual(panel.topics["/xgc/scene"], {
-    visible: true,
-    showOutlines: false,
-  });
-  assert.equal(panel.followTf, "world");
-  assert.equal(panel.followMode, "follow-pose");
-  assert.equal(panel.cameraState.distance, 12);
-  assert.equal(panel.scene.meshUpAxis, "z_up");
-  assert.deepEqual(panel.scene.transforms, { showLabel: false, axisScale: 0, lineWidth: 0 });
-
-  const ar = layout.configById[layout.layout.second];
-  assert.deepEqual(ar.imageMode, {
-    imageTopic: "/usb_cam/image_raw",
-    calibrationTopic: "/usb_cam/camera_info",
-    synchronize: false,
-    rotation: 0,
-    annotations: {},
-  });
-  assert.deepEqual(ar.topics["/xgc/scene"], { visible: true, showOutlines: false });
-  assert.equal(ar.scene.labelScaleFactor, 1.25);
-  assert.equal(ar.scene.meshUpAxis, "z_up");
-});
-
-test("accepts nested Lichtblick split layouts and rejects malformed trees", () => {
-  assert.equal(isPanelLayout("3D!xgc2"), true);
-  assert.equal(isPanelLayout({
-    first: "3D!xgc2",
-    second: "Image!ar",
-    direction: "row",
-    splitPercentage: 45,
-  }), true);
-  assert.equal(isPanelLayout({ first: "3D!xgc2", second: "Image!ar" }), false);
-  assert.equal(isPanelLayout({
-    first: "3D!xgc2",
-    second: "Image!ar",
-    direction: "row",
-    splitPercentage: 100,
-  }), false);
-});
-
-test("applies run-scoped grid defaults without mutating the packaged layout", () => {
-  const layout = JSON.parse(
-    fs.readFileSync(path.resolve(__dirname, "../launcher/default-layout.json"), "utf8"),
-  );
-  const configured = configureDefaultLayout(layout, {
-    arVisible: true,
-    visible: false,
-    color: "#112233",
-    size: 25,
-    divisions: 50,
-    lineWidth: 2,
-  });
-  const layer = configured.configById["3D!xgc2"].layers["xgc2-grid"];
-  assert.deepEqual(
-    { visible: layer.visible, color: layer.color, size: layer.size, divisions: layer.divisions, lineWidth: layer.lineWidth },
-    { visible: false, color: "#112233", size: 25, divisions: 50, lineWidth: 2 },
-  );
-  assert.equal(layout.configById["3D!xgc2"].layers["xgc2-grid"].color, "#248eff");
-});
-
-test("removes the camera AR panel when the Run disables its initial view", () => {
-  const layout = JSON.parse(
-    fs.readFileSync(path.resolve(__dirname, "../launcher/default-layout.json"), "utf8"),
-  );
-  const configured = configureDefaultLayout(layout, {
-    arVisible: false,visible: true,color: "#248eff",size: 10,divisions: 10,lineWidth: 1,
-  });
-  assert.equal(configured.layout, "3D!xgc2");
-  assert.equal(configured.configById["Image!xgc2-camera-ar"], undefined);
-  assert.notEqual(layout.configById["Image!xgc2-camera-ar"], undefined);
-});
-
-test("builds an AR-only initial view for a standalone origin", () => {
-  const layout = JSON.parse(
-    fs.readFileSync(path.resolve(__dirname, "../launcher/default-layout.json"), "utf8"),
-  );
-  const configured = configureDefaultLayout(layout, {
-    initialView: "ar",arVisible: true,visible: true,color: "#248eff",size: 10,divisions: 10,lineWidth: 1,
-  });
-  assert.equal(configured.layout, "Image!xgc2-camera-ar");
-  assert.deepEqual(Object.keys(configured.configById), ["Image!xgc2-camera-ar"]);
-  assert.notEqual(layout.configById["3D!xgc2"], undefined);
-});
-
-test("builds independent 3D and camera AR layouts", () => {
-  const layout = JSON.parse(
-    fs.readFileSync(path.resolve(__dirname, "../launcher/default-layout.json"), "utf8"),
-  );
-  const threeDee = configureStandalonePanel(layout, "3D!xgc2");
-  const ar = configureStandalonePanel(layout, "Image!xgc2-camera-ar");
-
-  assert.equal(threeDee.layout, "3D!xgc2");
-  assert.deepEqual(Object.keys(threeDee.configById), ["3D!xgc2"]);
-  assert.equal(ar.layout, "Image!xgc2-camera-ar");
-  assert.deepEqual(Object.keys(ar.configById), ["Image!xgc2-camera-ar"]);
-  assert.throws(() => configureStandalonePanel(layout, "Image!missing"), /missing panel/);
-  assert.equal(typeof layout.layout, "object");
-});
-
-test("exposes bounded grid parameters through the trusted process definition", () => {
+test("keeps the newest trusted process definition generic", () => {
   const plugin = JSON.parse(fs.readFileSync(
     path.resolve(__dirname, "../process-definitions/xgc2-lichtblick-web.json"),
     "utf8",
   ));
+  assert.deepEqual(
+    plugin.definitions.map((candidate) => candidate.version),
+    ["1.3.0", "1.5.0", "1.6.0"],
+  );
   const definition = plugin.definitions.findLast(
     (candidate) => candidate.id === "lichtblick-web",
   );
-  assert.equal(definition.version, "1.5.0");
+  assert.equal(definition.version, "1.6.0");
   assert.deepEqual(
     Object.keys(definition.parameters.properties).sort(),
-    ["arVisible", "bridgePort", "gridColor", "gridDivisions", "gridLineWidth", "gridSize", "gridVisible", "port"],
+    ["bridgePort", "port"],
   );
-  assert.deepEqual(definition.command.args.slice(-12), [
-    "--ar-visible", "${arVisible}",
-    "--grid-visible", "${gridVisible}",
-    "--grid-color", "${gridColor}",
-    "--grid-size", "${gridSize}",
-    "--grid-divisions", "${gridDivisions}",
-    "--grid-line-width", "${gridLineWidth}",
-  ]);
+  assert.deepEqual(definition.command.args.slice(-2), ["--public-url-prefix", "/"]);
 });
 
 test("does not replace an explicit data source", () => {
@@ -300,7 +162,7 @@ test("does not replace an explicit data source", () => {
   assert.match(script, /history\.replaceState/);
 });
 
-test("serves installed metadata, the XGC layout, and enforces WebSocket Origin", async (t) => {
+test("serves installed metadata without an XGC layout and enforces WebSocket Origin", async (t) => {
   const temporary = fs.mkdtempSync(path.join(os.tmpdir(), "xgc2-lichtblick-test-"));
   const webRoot = path.join(temporary, "web");
   fs.mkdirSync(webRoot);
@@ -311,43 +173,11 @@ test("serves installed metadata, the XGC layout, and enforces WebSocket Origin",
       "[/*LICHTBLICK_SUITE_DEFAULT_LAYOUT_PLACEHOLDER*/][0];" +
       "</script><body></body></html>",
   );
-  const layoutFile = path.join(temporary, "layout.json");
-  const defaultLayout = {
-    configById: {
-      "3D!xgc2": {
-        topics: { "/xgc/scene": { visible: true } },
-        layers: {
-          "xgc2-grid": {
-            layerId: "foxglove.Grid",
-            visible: true,
-            color: "#248eff",
-            size: 10,
-            divisions: 10,
-            lineWidth: 1,
-          },
-        },
-      },
-      "Image!xgc2-camera-ar": {
-        imageMode: {
-          imageTopic: "/usb_cam/image_raw",
-          calibrationTopic: "/usb_cam/camera_info",
-        },
-        topics: { "/xgc/scene": { visible: true } },
-      },
-    },
-    layout: {
-      first: "3D!xgc2",
-      second: "Image!xgc2-camera-ar",
-      direction: "row",
-      splitPercentage: 45,
-    },
-  };
-  fs.writeFileSync(layoutFile, JSON.stringify(defaultLayout));
   const buildInfoFile = path.join(temporary, "build-info.json");
   const buildInfo = {
     schema: "xgc2.lichtblick-web.build.v1",
     package: "xgc2-lichtblick-web",
-    version: "1.25.0-7~test",
+    version: "1.27.0-1~test",
     upstreamSha: "1".repeat(40),
   };
   fs.writeFileSync(buildInfoFile, JSON.stringify(buildInfo));
@@ -383,7 +213,6 @@ test("serves installed metadata, the XGC layout, and enforces WebSocket Origin",
       env: {
         ...process.env,
         XGC2_LICHTBLICK_WEB_STATIC_ROOT: webRoot,
-        XGC2_LICHTBLICK_WEB_DEFAULT_LAYOUT: layoutFile,
         XGC2_LICHTBLICK_WEB_BUILD_INFO: buildInfoFile,
         XGC2_LICHTBLICK_WEB_ENV_FILE: path.join(temporary, "missing.env"),
         ALLOWED_ORIGINS: "",
@@ -411,17 +240,11 @@ test("serves installed metadata, the XGC layout, and enforces WebSocket Origin",
   );
   assert.equal(version.headers["x-frame-options"], undefined);
 
-  const layout = await getJson(port, "/xgc2-layout.json");
-  assert.deepEqual(layout.body, defaultLayout);
-  assert.equal(layout.headers["cache-control"], "no-store");
-
-  const threeDeeLayout = await getJson(port, "/xgc2-3d-layout.json");
-  assert.equal(threeDeeLayout.body.layout, "3D!xgc2");
-  assert.deepEqual(Object.keys(threeDeeLayout.body.configById), ["3D!xgc2"]);
-
-  const arLayout = await getJson(port, "/xgc2-ar-layout.json");
-  assert.equal(arLayout.body.layout, "Image!xgc2-camera-ar");
-  assert.deepEqual(Object.keys(arLayout.body.configById), ["Image!xgc2-camera-ar"]);
+  const legacyLayout = await getText(port, "/xgc2-layout.json");
+  assert.equal(legacyLayout.statusCode, 404);
+  const index = await getText(port, "/");
+  assert.match(index.body, /LICHTBLICK_SUITE_DEFAULT_LAYOUT_PLACEHOLDER/);
+  assert.match(index.body, /foxglove-websocket/);
 
   assert.match(await websocketUpgradeStatus(port, "https://evil.example"), /^HTTP\/1\.1 403/);
   assert.match(await websocketUpgradeStatus(port, `http://127.0.0.1:${port}`), /^HTTP\/1\.1 101/);
@@ -481,6 +304,17 @@ function getJson(port, requestPath) {
           reject(error);
         }
       });
+    }).once("error", reject);
+  });
+}
+
+function getText(port, requestPath) {
+  return new Promise((resolve, reject) => {
+    http.get({ host: "127.0.0.1", port, path: requestPath }, (response) => {
+      let body = "";
+      response.setEncoding("utf8");
+      response.on("data", (chunk) => { body += chunk; });
+      response.on("end", () => resolve({ statusCode: response.statusCode, body, headers: response.headers }));
     }).once("error", reject);
   });
 }

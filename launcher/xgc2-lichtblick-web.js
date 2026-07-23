@@ -28,19 +28,10 @@ const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_PORT = 8080;
 const DEFAULT_CONTROL_PLANE_URL = "ws://127.0.0.1:8765";
 const DEFAULT_PUBLIC_URL_PREFIX = "/";
-const DEFAULT_AR_VISIBLE = true;
-const DEFAULT_INITIAL_VIEW = "split";
-const DEFAULT_GRID_COLOR = "#248eff";
-const DEFAULT_GRID_SIZE = 10;
-const DEFAULT_GRID_DIVISIONS = 10;
-const DEFAULT_GRID_LINE_WIDTH = 1;
 const DEFAULT_FRAME_ANCESTORS = "'self' http://127.0.0.1:5173 http://localhost:5173";
 const ENV_FILE = process.env.XGC2_LICHTBLICK_WEB_ENV_FILE ?? "/etc/xgc2/lichtblick-web.env";
 const DEFAULT_STATIC_ROOT = "/usr/lib/xgc2/lichtblick-web/web";
 const DEFAULT_BUILD_INFO_FILE = "/usr/lib/xgc2/lichtblick-web/build-info.json";
-const DEFAULT_LAYOUT_FILE =
-  process.env.XGC2_LICHTBLICK_WEB_DEFAULT_LAYOUT ??
-  "/usr/lib/xgc2/lichtblick-web/default-layout.json";
 // STATIC_ROOT is normally the installed-path constant above; it can be
 // overridden by the XGC2_LICHTBLICK_WEB_STATIC_ROOT environment variable
 // for development/testing without changing the package.
@@ -68,13 +59,6 @@ function parseArgs(argv) {
     publicUrlPrefix: null,
     allowedOrigins: [],
     frameAncestors: null,
-    initialView: null,
-    arVisible: null,
-    gridVisible: null,
-    gridColor: null,
-    gridSize: null,
-    gridDivisions: null,
-    gridLineWidth: null,
     showHelp: false,
   };
 
@@ -106,26 +90,18 @@ function parseArgs(argv) {
       case "--frame-ancestors":
         opts.frameAncestors = argv[++i];
         break;
-      case "--initial-view":
-        opts.initialView = parseInitialView(argv[++i]);
-        break;
       case "--ar-visible":
-        opts.arVisible = parseBooleanOption(arg, argv[++i]);
-        break;
       case "--grid-visible":
-        opts.gridVisible = parseBooleanOption(arg, argv[++i]);
-        break;
       case "--grid-color":
-        opts.gridColor = parseGridColor(argv[++i]);
-        break;
       case "--grid-size":
-        opts.gridSize = parseNumberOption(arg, argv[++i], 0.1, 100000);
-        break;
       case "--grid-divisions":
-        opts.gridDivisions = parseIntegerOption(arg, argv[++i], 1, 10000);
-        break;
       case "--grid-line-width":
-        opts.gridLineWidth = parseNumberOption(arg, argv[++i], 0.1, 100);
+      case "--initial-view":
+        // Historical package definitions may still supply these arguments.
+        // Deliberately consume them as no-ops so recovering an old process
+        // instance remains safe, while all XGC layout behavior lives outside
+        // this generic browser server.
+        consumeDeprecatedLayoutOption(arg, argv[++i]);
         break;
       default:
         if (arg.startsWith("--")) {
@@ -137,36 +113,8 @@ function parseArgs(argv) {
   return opts;
 }
 
-function parseBooleanOption(name, value) {
-  if (value === "true") return true;
-  if (value === "false") return false;
-  throw new Error(`invalid ${name} value: ${value}`);
-}
-
-function parseInitialView(value) {
-  if (value === "split" || value === "3d" || value === "ar") return value;
-  throw new Error(`invalid --initial-view value: ${value}`);
-}
-
-function parseNumberOption(name, value, minimum, maximum) {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed) || parsed < minimum || parsed > maximum) {
-    throw new Error(`invalid ${name} value: ${value}`);
-  }
-  return parsed;
-}
-
-function parseIntegerOption(name, value, minimum, maximum) {
-  const parsed = parseNumberOption(name, value, minimum, maximum);
-  if (!Number.isInteger(parsed)) throw new Error(`invalid ${name} value: ${value}`);
-  return parsed;
-}
-
-function parseGridColor(value) {
-  if (typeof value !== "string" || !/^#[0-9a-fA-F]{6}$/.test(value)) {
-    throw new Error(`invalid --grid-color value: ${value}`);
-  }
-  return value.toLowerCase();
+function consumeDeprecatedLayoutOption(name, value) {
+  if (value === undefined) throw new Error(`missing value for ${name}`);
 }
 
 function printHelp() {
@@ -192,20 +140,6 @@ function printHelp() {
       "  --frame-ancestors <sources>    CSP frame-ancestors source list.",
       "                                   Env: FRAME_ANCESTORS.",
       `                                   Default: ${DEFAULT_FRAME_ANCESTORS}`,
-      "  --initial-view <split|3d|ar>   Choose the standalone initial panel layout.",
-      `                                   Default: ${DEFAULT_INITIAL_VIEW}`,
-      "  --ar-visible <true|false>      Open the camera AR panel in the initial layout.",
-      `                                   Default: ${DEFAULT_AR_VISIBLE}`,
-      "  --grid-visible <true|false>    Show the initial 3D grid.",
-      `                                   Default: true`,
-      "  --grid-color <#rrggbb>         Initial 3D grid color.",
-      `                                   Default: ${DEFAULT_GRID_COLOR}`,
-      "  --grid-size <number>           Initial grid side length.",
-      `                                   Default: ${DEFAULT_GRID_SIZE}`,
-      "  --grid-divisions <integer>     Initial grid subdivision count.",
-      `                                   Default: ${DEFAULT_GRID_DIVISIONS}`,
-      "  --grid-line-width <number>     Initial grid line width.",
-      `                                   Default: ${DEFAULT_GRID_LINE_WIDTH}`,
       "  -h, --help                     Show this help and exit.",
       "",
       "Environment variables override compiled-in defaults but are themselves",
@@ -510,68 +444,12 @@ function buildAutoConnectScript(prefix) {
   })();</script>`;
 }
 
-function transformIndexHtml(source, defaultLayout, prefix) {
-  const placeholder = "/*LICHTBLICK_SUITE_DEFAULT_LAYOUT_PLACEHOLDER*/";
-  if (!source.includes(placeholder)) {
-    throw new Error("Lichtblick default-layout placeholder is missing from index.html");
-  }
-  const withLayout = source.replace(placeholder, JSON.stringify(defaultLayout));
+function transformIndexHtml(source, prefix) {
   const autoConnect = buildAutoConnectScript(prefix);
-  if (!withLayout.includes("</head>")) {
+  if (!source.includes("</head>")) {
     throw new Error("Lichtblick index.html has no closing head element");
   }
-  return withLayout.replace("</head>", `${autoConnect}</head>`);
-}
-
-function isPanelLayout(value) {
-  if (typeof value === "string") return value.length > 0;
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
-  return (value.direction === "row" || value.direction === "column") &&
-    Number.isFinite(value.splitPercentage) &&
-    value.splitPercentage > 0 && value.splitPercentage < 100 &&
-    isPanelLayout(value.first) && isPanelLayout(value.second);
-}
-
-function loadDefaultLayout() {
-  const parsed = JSON.parse(fs.readFileSync(DEFAULT_LAYOUT_FILE, "utf8"));
-  if (typeof parsed !== "object" || parsed === null || !isPanelLayout(parsed.layout)) {
-    throw new Error(`${DEFAULT_LAYOUT_FILE} is not a valid Lichtblick layout`);
-  }
-  return parsed;
-}
-
-function configureDefaultLayout(layout, grid) {
-  const configured = structuredClone(layout);
-  const panel = configured.configById?.["3D!xgc2"];
-  const layer = panel?.layers?.["xgc2-grid"];
-  if (!layer || layer.layerId !== "foxglove.Grid") {
-    throw new Error(`${DEFAULT_LAYOUT_FILE} is missing the XGC grid layer`);
-  }
-  layer.visible = grid.visible;
-  layer.color = grid.color;
-  layer.size = grid.size;
-  layer.divisions = grid.divisions;
-  layer.lineWidth = grid.lineWidth;
-  const initialView = grid.initialView ?? (grid.arVisible === false ? "3d" : DEFAULT_INITIAL_VIEW);
-  if (initialView === "3d") {
-    delete configured.configById["Image!xgc2-camera-ar"];
-    configured.layout = "3D!xgc2";
-  } else if (initialView === "ar") {
-    delete configured.configById["3D!xgc2"];
-    configured.layout = "Image!xgc2-camera-ar";
-  }
-  return configured;
-}
-
-function configureStandalonePanel(layout, panelId) {
-  const panel = layout.configById?.[panelId];
-  if (typeof panel !== "object" || panel === null || Array.isArray(panel)) {
-    throw new Error(`${DEFAULT_LAYOUT_FILE} is missing panel ${panelId}`);
-  }
-  const configured = structuredClone(layout);
-  configured.configById = { [panelId]: configured.configById[panelId] };
-  configured.layout = panelId;
-  return configured;
+  return source.replace("</head>", `${autoConnect}</head>`);
 }
 
 function loadBuildInfo() {
@@ -703,7 +581,6 @@ function buildRequestListener(
   targetWs,
   publicPrefix,
   transformedIndex,
-  defaultLayout,
   buildInfo,
   responseSecurityHeaders,
 ) {
@@ -726,32 +603,6 @@ function buildRequestListener(
     }
     if (endpointMatches(req.url, publicPrefix, "version")) {
       writeJson(res, 200, buildInfo, responseSecurityHeaders);
-      return;
-    }
-    // Lichtblick's built-in `layoutUrl` deep link imports and selects this
-    // layout for an embedded XGC panel. Exposing the same validated layout
-    // that is injected as the first-run default also updates browsers which
-    // already have an older layout in IndexedDB, without patching Lichtblick.
-    if (endpointMatches(req.url, publicPrefix, "xgc2-layout.json")) {
-      writeJson(res, 200, defaultLayout, responseSecurityHeaders);
-      return;
-    }
-    if (endpointMatches(req.url, publicPrefix, "xgc2-3d-layout.json")) {
-      writeJson(
-        res,
-        200,
-        configureStandalonePanel(defaultLayout, "3D!xgc2"),
-        responseSecurityHeaders,
-      );
-      return;
-    }
-    if (endpointMatches(req.url, publicPrefix, "xgc2-ar-layout.json")) {
-      writeJson(
-        res,
-        200,
-        configureStandalonePanel(defaultLayout, "Image!xgc2-camera-ar"),
-        responseSecurityHeaders,
-      );
       return;
     }
     serveStatic(req, res, publicPrefix, transformedIndex, responseSecurityHeaders);
@@ -796,16 +647,6 @@ function main() {
     opts.frameAncestors ??
     process.env.FRAME_ANCESTORS ??
     DEFAULT_FRAME_ANCESTORS;
-  const grid = {
-    initialView: opts.initialView ?? DEFAULT_INITIAL_VIEW,
-    arVisible: opts.arVisible ?? DEFAULT_AR_VISIBLE,
-    visible: opts.gridVisible ?? true,
-    color: opts.gridColor ?? DEFAULT_GRID_COLOR,
-    size: opts.gridSize ?? DEFAULT_GRID_SIZE,
-    divisions: opts.gridDivisions ?? DEFAULT_GRID_DIVISIONS,
-    lineWidth: opts.gridLineWidth ?? DEFAULT_GRID_LINE_WIDTH,
-  };
-
   let targetWs;
   try {
     targetWs = parseWsUrl(controlPlaneUrl);
@@ -821,14 +662,12 @@ function main() {
   if (prefix.length > 1 && prefix.endsWith("/")) prefix = prefix.slice(0, -1);
 
   let transformedIndex;
-  let defaultLayout;
   let buildInfo;
   let validatedFrameAncestors;
   let configuredOrigins;
   try {
     const indexSource = fs.readFileSync(path.join(STATIC_ROOT, "index.html"), "utf8");
-    defaultLayout = configureDefaultLayout(loadDefaultLayout(), grid);
-    transformedIndex = transformIndexHtml(indexSource, defaultLayout, prefix);
+    transformedIndex = transformIndexHtml(indexSource, prefix);
     buildInfo = loadBuildInfo();
     validatedFrameAncestors = validateFrameAncestors(frameAncestorsValue);
     configuredOrigins = parseConfiguredOrigins(configuredOriginValues);
@@ -842,7 +681,6 @@ function main() {
     targetWs,
     prefix,
     transformedIndex,
-    defaultLayout,
     buildInfo,
     responseSecurityHeaders,
   ));
@@ -918,11 +756,8 @@ if (require.main === module) {
 
 module.exports = {
   buildAutoConnectScript,
-  configureDefaultLayout,
-  configureStandalonePanel,
   defaultListenerOrigins,
   endpointMatches,
-  isPanelLayout,
   loadBuildInfo,
   normalizeOrigin,
   parseWsUrl,

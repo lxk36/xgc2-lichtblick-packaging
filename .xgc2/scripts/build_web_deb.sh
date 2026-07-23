@@ -65,8 +65,6 @@ install -m 0755 "${repo_root}/launcher/xgc2-lichtblick-web" \
   "${pkg_root}/usr/bin/xgc2-lichtblick-web"
 install -m 0644 "${repo_root}/launcher/xgc2-lichtblick-web.js" \
   "${pkg_root}/usr/lib/xgc2/lichtblick-web/xgc2-lichtblick-web.js"
-install -m 0644 "${repo_root}/launcher/default-layout.json" \
-  "${pkg_root}/usr/lib/xgc2/lichtblick-web/default-layout.json"
 install -m 0644 "${repo_root}/process-definitions/xgc2-lichtblick-web.json" \
   "${pkg_root}/usr/share/xgc2/process-definitions/xgc2-lichtblick-web.json"
 python3 - \
@@ -136,7 +134,8 @@ Depends: ca-certificates, libc6, libgcc-s1, libstdc++6
 Recommends: ${bridge_package}
 Description: XGC2 Lichtblick browser-based robotics visualization
  Serves the pinned Lichtblick web application from a command-line HTTP server,
- auto-connects through a same-origin WebSocket proxy, and opens with a 3D layout.
+ auto-connects through a same-origin WebSocket proxy, and leaves initial layout
+ ownership to the embedding application.
 EOF
 
 find "${pkg_root}" -exec touch -h -d "@${source_date_epoch}" {} +
