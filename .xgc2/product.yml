@@ -50,7 +50,6 @@ ownership:
   - /usr/lib/xgc2/lichtblick-web
   - /etc/xgc2/lichtblick-web.env
   - /usr/share/doc/xgc2-lichtblick-web
-  - /usr/share/xgc2/process-definitions/xgc2-lichtblick-web.json
   - /opt/Lichtblick
   - /usr/bin/lichtblick
   - /usr/share/applications/lichtblick.desktop

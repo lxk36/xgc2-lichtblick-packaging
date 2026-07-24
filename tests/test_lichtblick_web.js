@@ -137,13 +137,17 @@ globalThis.LICHTBLICK_SUITE_DEFAULT_LAYOUT = [/*LICHTBLICK_SUITE_DEFAULT_LAYOUT_
 });
 
 test("keeps the newest trusted process definition generic", () => {
+  // Process definitions live in the xgc2 process-catalog (B1, current only).
   const plugin = JSON.parse(fs.readFileSync(
-    path.resolve(__dirname, "../process-definitions/xgc2-lichtblick-web.json"),
+    path.resolve(
+      __dirname,
+      "../../../xgc2/xgc2/process-catalog/current/webui/lichtblick/xgc2-lichtblick-web.json",
+    ),
     "utf8",
   ));
   assert.deepEqual(
     plugin.definitions.map((candidate) => candidate.version),
-    ["1.3.0", "1.5.0", "1.6.0"],
+    ["1.6.0"],
   );
   const definition = plugin.definitions.findLast(
     (candidate) => candidate.id === "lichtblick-web",

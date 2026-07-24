@@ -36,7 +36,6 @@ required_files=(
   launcher/reverse-proxy-examples.md
   launcher/xgc2-lichtblick-web
   launcher/xgc2-lichtblick-web.js
-  process-definitions/xgc2-lichtblick-web.json
 )
 for file in "${required_files[@]}"; do
   [[ -f "${file}" ]] || { echo "Missing required file: ${file}" >&2; exit 1; }
@@ -216,7 +215,6 @@ validate_deb() {
   grep -Fq './usr/lib/xgc2/lichtblick-web/node/bin/node' "${contents_file}"
   grep -Fq './usr/lib/xgc2/lichtblick-web/web/index.html' "${contents_file}"
   grep -Fq './usr/lib/xgc2/lichtblick-web/build-info.json' "${contents_file}"
-  grep -Fq './usr/share/xgc2/process-definitions/xgc2-lichtblick-web.json' "${contents_file}"
   grep -Fq './etc/xgc2/lichtblick-web.env' "${contents_file}"
   [[ "$(cat "${control_dir}/conffiles")" == '/etc/xgc2/lichtblick-web.env' ]]
   if grep -Eq '\./(usr/)?lib/systemd/' "${contents_file}"; then
