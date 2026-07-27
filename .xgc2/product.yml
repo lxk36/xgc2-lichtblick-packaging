@@ -1,74 +1,12 @@
 schema: xgc2.product.v1
-id: xgc2-lichtblick
-name: XGC2 Lichtblick Web and Desktop
+id: xgc2-lichtblick-packaging-archive
+name: XGC2 Lichtblick Packaging Archive
 version: 1.27.0-1
 kind: mixed
-summary: Pinned Lichtblick browser server with an optional Electron desktop package.
-groups:
-- webui
-- desktop
-apt:
-  distribution: focal,jammy,noble
-  install:
-  - xgc2-lichtblick-web
-  packages:
-  - xgc2-lichtblick-web
-  - xgc2-lichtblick
-  depends:
-  - ca-certificates
-  - libc6
-  - libgcc-s1
-  - libstdc++6
-  - libasound2
-  - libgtk-3-0
-  - libnotify4
-  - libnss3
-  - libxtst6
-  - xdg-utils
-  - libatspi2.0-0
-  - libdrm2
-  - libgbm1
-  - libxcb-dri3-0
+summary: Archived Debian packaging retained only as a development reference.
+lifecycle:
+  deprecated: true
+  replaced_by: xgc2-lichtblick
+  notes: APT, Debian/FPM builds, scheduled updates, and release publication are disabled.
 usage:
-  install: 'sudo apt update
-
-    sudo apt install xgc2-lichtblick-web'
-  smoke_test: 'xgc2-lichtblick-web --help
-
-    curl --fail http://127.0.0.1:8080/healthz'
-  notes: xgc2-lichtblick-web is the default browser-based package and never opens
-    a desktop window. It recommends the release-matched Foxglove bridge (Noetic on
-    focal, Humble on jammy, and Jazzy on noble) so standard installs add the live-data
-    bridge automatically. The optional xgc2-lichtblick package retains Electron desktop
-    integration and disables its built-in updater; install upgrades through APT.
-conflicts:
-  apt_packages:
-  - lichtblick
-ownership:
-  paths:
-  - /usr/bin/xgc2-lichtblick-web
-  - /usr/lib/xgc2/lichtblick-web
-  - /etc/xgc2/lichtblick-web.env
-  - /usr/share/doc/xgc2-lichtblick-web
-  - /opt/Lichtblick
-  - /usr/bin/lichtblick
-  - /usr/share/applications/lichtblick.desktop
-  - /usr/share/doc/xgc2-lichtblick
-  - /usr/share/icons/hicolor/16x16/apps/lichtblick.png
-  - /usr/share/icons/hicolor/32x32/apps/lichtblick.png
-  - /usr/share/icons/hicolor/48x48/apps/lichtblick.png
-  - /usr/share/icons/hicolor/64x64/apps/lichtblick.png
-  - /usr/share/icons/hicolor/128x128/apps/lichtblick.png
-  - /usr/share/icons/hicolor/256x256/apps/lichtblick.png
-  - /usr/share/icons/hicolor/512x512/apps/lichtblick.png
-  - /usr/share/icons/hicolor/1024x1024/apps/lichtblick.png
-  - /usr/share/mime/packages/lichtblick.xml
-release:
-  repository: lxk36/xgc2-lichtblick-packaging
-  ref: main
-  workflow: release.yml
-  ci_workflow: ci.yml
-  apt_versions:
-    focal: 1.27.0-1~focal
-    jammy: 1.27.0-1~jammy
-    noble: 1.27.0-1~noble
+  notes: Do not publish artifacts from this repository.
